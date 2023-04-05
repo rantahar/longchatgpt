@@ -5,7 +5,6 @@ from pygments.lexers import get_lexer_by_name, TextLexer
 from pygments.formatters import html
 import markdown
 import re
-import bleach
 from html import escape, unescape
 
 app = Flask(__name__)
@@ -22,18 +21,15 @@ def render_message_content(markdown_str):
         else:
             lexer = get_lexer_by_name(language, stripall=True)
 
-        formatter = html.HtmlFormatter(style="colorful")
+        formatter = html.HtmlFormatter(style="colorful", noclasses=True)
 
-        code_lines = ''.join([unescape(code_line) for code_line in code_lines])
-        print(code_lines)
+        code_lines = '\n'.join([unescape(code_line) for code_line in code_lines])
         code_lines = code_lines.replace("#x27;", "'")
         highlighted_code = highlight(code_lines, lexer, formatter)
-        print(highlighted_code)
         if highlighted_code:
             replacement = f'<div class="card my-2"><div class="card-header">{language}</div><div class="card-body"><pre><code class="code">{highlighted_code}</code></pre></div></div>'
         else:
             replacement = ''
-        print("replacement", replacement)
 
         markdown_str = markdown_str.replace(f'```{code_block}\n```', replacement)
 
