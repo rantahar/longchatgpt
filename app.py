@@ -9,7 +9,8 @@ from html import escape, unescape
 
 app = Flask(__name__)
 
-def render_message_content(markdown_str):
+
+def render_with_markdown(markdown_str):
     markdown_str = escape(markdown_str)
     code_blocks = re.findall(r'```(.*?)\n```', markdown_str, re.DOTALL)
     for code_block in code_blocks:
@@ -35,12 +36,17 @@ def render_message_content(markdown_str):
 
     return markdown.markdown(markdown_str)
 
+
 def render_messages(messages):
     rendered_messages = []
     for message in messages:
-        rendered_content = render_message_content(message["content"])
+        try:
+            rendered_content = render_with_markdown(message["content"])
+        except:
+            rendered_content = escape(message["content"])
         rendered_messages.append({"role": message["role"], "content": rendered_content})
     return rendered_messages
+
 
 @app.route("/", methods=["GET", "POST"])
 def home():
@@ -48,7 +54,7 @@ def home():
         new_msg = request.form["new_message"]
         if new_msg:
             new_message(new_msg)
-
+    
     rendered_messages = render_messages(messages)
     return render_template("index.html", messages=rendered_messages)
 
