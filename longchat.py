@@ -23,7 +23,7 @@ num_messages = len(messages)
 
 summarize_every = 5
 
-index = len(messages)
+index = len(messages)//2
 def new_message(user_message):
     global index
     messages.append({"role": "user", "content": user_message})
