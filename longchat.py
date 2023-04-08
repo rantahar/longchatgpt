@@ -1,5 +1,6 @@
 import json
 import openai
+from tokens import num_tokens_from_messages
 
 messages_file = "messages.json"
 
@@ -27,15 +28,22 @@ def new_message(user_message):
     global index
     messages.append({"role": "user", "content": user_message})
 
+    send_messages = messages[-20:]
+    while num_tokens_from_messages(send_messages) > 1024:
+         send_messages=send_messages[1:]
+         print("too long", num_tokens_from_messages(send_messages))
+
     result = openai.ChatCompletion.create(
-      model=model, messages=messages
+      model=model, messages=send_messages
     )
 
     messages.append({"role": "assistant", "content": result.choices[0].message.content})
 
     if index % summarize_every == 0:
+        send_messages.append({"role": "assistant", "content": result.choices[0].message.content})
+        send_messages.append({"role": "user", "content": summary_prompt})
         result = openai.ChatCompletion.create(
-          model=model, messages=messages
+          model=model, messages=send_messages
         )
 
         messages.append({"role": "user", "content": summary_prompt})
