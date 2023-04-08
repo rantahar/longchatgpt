@@ -3,8 +3,9 @@ import openai
 from tokens import num_tokens_from_messages
 
 messages_file = "messages.json"
-
+max_summary_length = 120
 model = "gpt-3.5-turbo"
+summarize_every = 1
 
 with open('api_key', 'r') as file1:
     openai.api_key = file1.readlines()[0].strip()
@@ -21,35 +22,67 @@ current_message_index = 0
 num_messages = len(messages)
 
 
-summarize_every = 5
+def shorten_conversation(messages):
+    short = messages[-20:]
+    while num_tokens_from_messages(short) > 1024:
+        short=short[1:]
+        print("too long", num_tokens_from_messages(short))
+    return short
+
+
+def summarize_chatgpt(messages):
+    print("summarizing")
+    messages.append({"role": "user", "content": summary_prompt})
+    result = openai.ChatCompletion.create(
+      model=model, messages=shorten_conversation(messages)
+    )
+    messages.append({"role": "assistant", "content": result.choices[0].message.content})
+
+
+def summarize_api(messages):
+    print("summarizing")
+    short = shorten_conversation(messages)
+    messages_with_role = [f'{m["role"]}: {m["content"]}' for m in short]
+    messages_text = '\ņ'.join(messages_with_role)
+    summary = openai.Completion.create(
+        engine="davinci",
+        prompt=(f"Please summarize the following conversation:\n{messages_text}\n\nSummary:"),
+        max_tokens=max_summary_length,
+        temperature=0.5,
+        n = 1,
+        stop=None,
+        frequency_penalty=0,
+        presence_penalty=0
+    ).choices[0].text.strip()
+    messages.append({"role": "assistant", "content": summary})
+
 
 index = len(messages)//2
 def new_message(user_message):
-    global index
+    global index, messages
     messages.append({"role": "user", "content": user_message})
 
-    send_messages = messages[-20:]
-    while num_tokens_from_messages(send_messages) > 1024:
-         send_messages=send_messages[1:]
-         print("too long", num_tokens_from_messages(send_messages))
-
-    result = openai.ChatCompletion.create(
-      model=model, messages=send_messages
-    )
+    try: 
+        result = openai.ChatCompletion.create(
+          model=model, messages=shorten_conversation(messages)
+        )
+    except:
+        print("here")
+        messages = messages[:-1]
+        return
 
     messages.append({"role": "assistant", "content": result.choices[0].message.content})
 
-    if index % summarize_every == 0:
-        send_messages.append({"role": "assistant", "content": result.choices[0].message.content})
-        send_messages.append({"role": "user", "content": summary_prompt})
-        result = openai.ChatCompletion.create(
-          model=model, messages=send_messages
-        )
-
-        messages.append({"role": "user", "content": summary_prompt})
-        messages.append({"role": "assistant", "content": result.choices[0].message.content})
-    
     with open(messages_file, 'w') as outfile:
+        json.dump(messages[1:], outfile)
+
+    if index % summarize_every == 0 and index > 0:
+        try:
+            summarize_chatgpt(messages)    
+        except:
+            messages = messages[:-1]
+    
+        with open(messages_file, 'w') as outfile:
             json.dump(messages[1:], outfile)
 
     index += 1
