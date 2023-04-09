@@ -18,6 +18,11 @@
                         <strong>{{ message.role }}</strong> {{ message.content | safe }}
                     </div>
                     {% endfor %}
+                    {% if error_in %}
+                    <div class="message mb-2 text-lg">
+                        <strong>Error posting the following message: </strong>{{ error_in }}
+                    </div>
+                    {% endif %}
                     <form method="post" action="{{ url_for('home') }}">
                         <div class="form-group">
                         </div>
@@ -42,6 +47,10 @@
                 // submit the form
                 var form = document.getElementsByTagName('form')[0];
                 form.submit();
+            }
+        
+            window.onload = function() {
+                window.scrollTo(0, document.body.scrollHeight);
             }
         </script>
     </body>

@@ -48,15 +48,21 @@ def render_messages(messages):
     return rendered_messages
 
 
+error_in = ""
+
 @app.route("/", methods=["GET", "POST"])
 def home():
     if request.method == "POST":
         new_msg = request.form["new_message"]
         if new_msg:
-            new_message(new_msg)
+            try:
+                new_message(new_msg)
+                error_in = ""
+            except:
+                error_in = new_msg
     
     rendered_messages = render_messages(messages)
-    return render_template("index.html", messages=rendered_messages)
+    return render_template("index.html", messages=rendered_messages, error_in=error_in)
 
 
 
