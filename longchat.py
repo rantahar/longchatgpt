@@ -5,7 +5,7 @@ from tokens import num_tokens_from_messages
 messages_file = "messages.json"
 max_summary_length = 120
 model = "gpt-3.5-turbo"
-summarize_every = 1
+summarize_every = 4
 
 with open('api_key', 'r') as file1:
     openai.api_key = file1.readlines()[0].strip()
@@ -46,7 +46,7 @@ def summarize_api(messages):
     messages_text = '\ņ'.join(messages_with_role)
     summary = openai.Completion.create(
         engine="davinci",
-        prompt=(f"Please summarize the following conversation:\n{messages_text}\n\nSummary:"),
+        prompt=(f"{summary_prompt}:\n{messages_text}\n\nSummary:"),
         max_tokens=max_summary_length,
         temperature=0.5,
         n = 1,
@@ -66,8 +66,8 @@ def new_message(user_message):
         result = openai.ChatCompletion.create(
           model=model, messages=shorten_conversation(messages)
         )
-    except:
-        print("here")
+    except Exception as e:
+        print(e)
         messages = messages[:-1]
         return
 
@@ -79,7 +79,8 @@ def new_message(user_message):
     if index % summarize_every == 0 and index > 0:
         try:
             summarize_chatgpt(messages)    
-        except:
+        except Exception as e:
+            print(e)
             messages = messages[:-1]
     
         with open(messages_file, 'w') as outfile:
