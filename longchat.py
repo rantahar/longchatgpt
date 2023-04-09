@@ -1,88 +1,103 @@
 import json
 import openai
 from tokens import num_tokens_from_messages
+import os
 
-messages_file = "conversations/summary_chatgpt.json"
-max_summary_length = 120
-model = "gpt-3.5-turbo"
-summarize_every = 4
 
 with open('api_key', 'r') as file1:
     openai.api_key = file1.readlines()[0].strip()
 
-summary_prompt = "Please provide a detailed summary of the entire conversation so far. Summarize the main ideas, themes and topics."
 
-with open(messages_file, 'r') as f:
-    messages = json.load(f)
+class LongChat():
+    def __init__(
+        self,
+        conversation = "summary_chatgpt.json",
+        max_summary_length = 120,
+        model = "gpt-3.5-turbo",
+        summarize_every = 3,
+        max_tokens = 1024,
+        conversations_path = "conversations/"
+    ):
+        self.conversations_path = conversations_path
+        self.conversation = conversation
+        self.messages = []
+        self.index = 0
+        self.summarize_every = summarize_every
+        self.model = model
+        self.summary_prompt = "Please provide a summary of the entire conversation so far. Summarize the main ideas, themes and topics."
+        self.max_summary_length = max_summary_length
+        self.max_tokens = max_tokens
 
-messages.insert(0, {"role": "system", "content": "You are a helpful assistant. You will occationally summarize the conversation for yourself when prompted. You will use existing summaries to continue the conversation naturally."})
+        self.read_conversation(conversation)
 
-# Define initial variables
-current_message_index = 0
-num_messages = len(messages)
-
-
-def shorten_conversation(messages):
-    short = messages[-20:]
-    while num_tokens_from_messages(short) > 2048:
-        short=short[1:]
-    print(f"sending {len(short)} messages with {num_tokens_from_messages(short)} tokens")
-    return short
-
-
-def summarize_chatgpt(messages):
-    print("summarizing")
-    messages.append({"role": "user", "content": summary_prompt})
-    result = openai.ChatCompletion.create(
-      model=model, messages=shorten_conversation(messages)
-    )
-    messages.append({"role": "assistant", "content": result.choices[0].message.content})
-
-
-def summarize_api(messages):
-    print("summarizing")
-    short = shorten_conversation(messages)
-    messages_with_role = [f'{m["role"]}: {m["content"]}' for m in short]
-    messages_text = '\ņ'.join(messages_with_role)
-    summary = openai.Completion.create(
-        engine="davinci",
-        prompt=(f"{summary_prompt}:\n{messages_text}\n\nSummary:"),
-        max_tokens=max_summary_length,
-        temperature=0.5,
-        n = 1,
-        stop=None,
-        frequency_penalty=0,
-        presence_penalty=0
-    ).choices[0].text.strip()
-    messages.append({"role": "assistant", "content": summary})
-
-
-index = len(messages)//2
-def new_message(user_message):
-    global index, messages
-    messages.append({"role": "user", "content": user_message})
-
-    try: 
-        result = openai.ChatCompletion.create(
-          model=model, messages=shorten_conversation(messages)
-        )
-    except:
-        messages.pop()
-        raise(e)
-
-    messages.append({"role": "assistant", "content": result.choices[0].message.content})
-
-    with open(messages_file, 'w') as outfile:
-        json.dump(messages[1:], outfile)
-
-    if index % summarize_every == 0 and index > 0:
-        try:
-            summarize_chatgpt(messages)    
-        except:
-            messages.pop()
+    def read_conversation(self, conversation):
+        self.conversation = conversation
+        self.messages_file = os.path.join(self.conversations_path, conversation)
+        with open(self.messages_file, 'r') as f:
+            self.messages = json.load(f)
     
-        with open(messages_file, 'w') as outfile:
-            json.dump(messages[1:], outfile)
+        self.messages.insert(0, {"role": "system", "content": "You are a helpful assistant. You will occationally summarize the conversation for yourself when prompted. You will use existing summaries to continue the conversation naturally."})
+    
+        # Define initial variables
+        self.index = len(self.messages)//2
+    
+    def shorten_conversation(self):
+        short = self.messages[-20:]
+        while num_tokens_from_messages(short) > self.max_tokens:
+            short=short[1:]
+        print(f"sending {len(short)} messages with {num_tokens_from_messages(short)} tokens")
+        return short
+    
+    def summarize_chatgpt(self):
+        print("summarizing")
+        self.messages.append({"role": "user", "content": self.summary_prompt})
+        result = openai.ChatCompletion.create(
+          model=self.model, messages=self.shorten_conversation()
+        )
+        self.messages.append({"role": "assistant", "content": result.choices[0].message.content})
 
-    index += 1
+    def summarize_api(self):
+        print("summarizing")
+        self.messages.append({"role": "user", "content": self.summary_prompt})
+        result = openai.Completion.create(
+          engine="davinci",
+          prompt=(f"{self.summary_prompt}:\n{self.shorten_conversation()}\n\nSummary:"),
+          max_tokens=self.max_tokens,
+          temperature=0.5,
+          n = 1,
+          stop=None,
+          frequency_penalty=0,
+          presence_penalty=0
+        ).choices[0].text.strip()
+        self.messages.append({"role": "assistant", "content": result})
+
+    def new_message(self, user_message):
+        print(self.index)
+        self.messages.append({"role": "user", "content": user_message})
+        try: 
+            result = openai.ChatCompletion.create(
+              model=self.model, messages=self.shorten_conversation()
+            )
+        except Exception as e:
+            self.messages.pop()
+            raise(e)
+        
+        self.messages.append({"role": "assistant", "content": result.choices[0].message.content})
+
+        with open(self.messages_file, 'w') as outfile:
+            json.dump(self.messages[1:], outfile, indent=4)
+        
+        if self.index % self.summarize_every == 0 and self.index > 0:
+            try:
+                self.summarize_chatgpt()    
+            except Exception as e:
+                self.messages.pop()
+                raise(e)
+
+            with open(self.messages_file, 'w') as outfile:
+                json.dump(self.messages[1:], outfile, indent=4)
+
+        self.index += 1
+
+
 

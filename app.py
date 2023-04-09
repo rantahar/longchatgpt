@@ -1,14 +1,19 @@
 from flask import Flask, render_template, request
-from longchat import messages, new_message
+from longchat import LongChat
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name, TextLexer
 from pygments.formatters import html
 import markdown
 import re
 from html import escape, unescape
+import os
 
 app = Flask(__name__)
 
+conversations_path = "conversations/"
+
+
+chatbot = LongChat()
 
 def render_with_markdown(markdown_str):
     markdown_str = escape(markdown_str)
@@ -52,18 +57,37 @@ error_in = ""
 
 @app.route("/", methods=["GET", "POST"])
 def home():
+    global error_in
+    conversations = []
+    for filename in os.listdir(conversations_path):
+        conversations.append(filename)
+
+    conversation_id = request.args.get("conversation_id")
+    if not conversation_id and request.method == "POST":
+        conversation_id = request.form["conversation_id"]
+    if conversation_id:
+        chatbot.read_conversation(conversation_id)
+    else:
+        chatbot.read_conversation(chatbot.conversation)
+
     if request.method == "POST":
         new_msg = request.form["new_message"]
         if new_msg:
             try:
-                new_message(new_msg)
+                chatbot.new_message(new_msg)
                 error_in = ""
-            except:
+            except Exception as e:
+                print(e)
                 error_in = new_msg
     
-    rendered_messages = render_messages(messages)
-    return render_template("index.html", messages=rendered_messages, error_in=error_in)
-
+    rendered_messages = render_messages(chatbot.messages)
+    return render_template(
+        "index.html",
+        messages=rendered_messages,
+        conversations=conversations,
+        active_conversation_id=chatbot.conversation,
+        error_in=error_in 
+    )
 
 
 

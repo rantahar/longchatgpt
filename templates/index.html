@@ -11,8 +11,20 @@
     <body>
         <div class="container">
             <div class="row">
-                <div class="col-2"></div>
-                <div class="col-8">
+                <div class="col-3">
+                    <div class="nav flex-column nav-pills sticky-top" id="v-pills-tab" role="tablist" aria-orientation="vertical">
+                        {% for conversation in conversations %}
+                        {%if active_conversation_id==conversation %}
+                        <a class="nav-link active" href="?conversation_id={{ conversation }}" id="v-pills-{{ conversation }}-tab">
+                            {% else %}
+                        <a class="nav-link" href="?conversation_id={{ conversation }}" id="v-pills-{{ conversation }}-tab">
+                        {% endif %}
+                            {{ conversation }}
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="col-9">
                     {% for message in messages %}
                     <div class="message mb-2 text-lg">
                         <strong>{{ message.role }}</strong> {{ message.content | safe }}
@@ -23,14 +35,12 @@
                         <strong>Error posting the following message: </strong>{{ error_in }}
                     </div>
                     {% endif %}
-                    <form method="post" action="{{ url_for('home') }}">
-                        <div class="form-group">
-                        </div>
+                    <form method="post" id="message_form" action="{{ url_for('home') }}">
                         <textarea name="new_message" class="form-control" placeholder="Type your message here" onkeydown="if(event.ctrlKey&&event.keyCode==13){event.preventDefault(); sendMessage();}"></textarea>
+                        <input type="hidden" name="conversation_id" value="{{ active_conversation_id }}"/>
                         <button id="send-button" type="submit" class="btn btn-primary" onclick="sendMessage()">Send</button>
                     </form>
                 </div>
-                <div class="col-2"></div>
             </div>
         </div>
         <script>$(document).ready(function(){ $("form").submit(function(){ $("#send-button").attr("disabled", true); $("#send-button").css("opacity", "0.5"); $('#loading-spinner').show(); }); });</script>
@@ -45,7 +55,7 @@
                 btn.style.opacity = 0.5;
 
                 // submit the form
-                var form = document.getElementsByTagName('form')[0];
+                var form = document.getElementById('message_form');
                 form.submit();
             }
         
