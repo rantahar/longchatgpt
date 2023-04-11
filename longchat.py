@@ -24,7 +24,7 @@ class LongChat():
         self.index = 0
         self.summarize_every = summarize_every
         self.model = model
-        self.summary_prompt = "Please provide a summary of the entire conversation so far. Summarize the main ideas, themes and topics."
+        self.summary_prompt = "Please summarize the entire conversation so far. Include the main ideas, themes and topics. Make the summary short. It is intended for you (gpt-3.5-turbo) and does not need to be human-readable."
         self.max_summary_length = max_summary_length
         self.max_tokens = max_tokens
 
