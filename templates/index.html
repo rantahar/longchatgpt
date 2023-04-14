@@ -26,9 +26,22 @@
                 </div>
                 <div class="col-9">
                     {% for message in messages %}
-                    <div class="message mb-2 text-lg">
-                        <strong>{{ message.role }}</strong> {{ message.content | safe }}
+                    
+                    {% if message.is_summary %}
+                    <div class="message mb-2 text-lg card bg-primary text-white">
+                        <div class="card-header">
+                            Summary
+                        </div>
+                        <div class="card-body">
+                            <strong>{{ message.role }}</strong>{{ message.content | safe }}
+                        </div>
                     </div>
+                    {% else %}
+                    <div class="message mb-2 text-lg">
+                        <strong>{{ message.role }}</strong>{{ message.content | safe }}
+                    </div>
+                    {% endif %}
+                    
                     {% endfor %}
                     {% if error_in %}
                     <div class="message mb-2 text-lg">

@@ -49,8 +49,24 @@ def render_messages(messages):
             rendered_content = render_with_markdown(message["content"])
         except:
             rendered_content = escape(message["content"])
-        rendered_messages.append({"role": message["role"], "content": rendered_content})
+        rendered_messages.append({
+            "role": message["role"],
+            "content": rendered_content,
+            "is_summary": message["is_summary"]
+        })
     return rendered_messages
+
+
+def get_display_messages():
+    print(f"displaying {len(chatbot.new_messages())} new messages")
+    new_messages = [dict(m, is_summary=False) for m in chatbot.new_messages()]
+    old_messages = [dict(m, is_summary=False) for m in chatbot.old_messages()]
+
+    new_messages[0]["is_system"] = True
+    new_messages[1]["is_summary_prompt"] = True
+    new_messages[2]["is_summary"] = True
+
+    return old_messages + new_messages
 
 
 error_in = ""
@@ -80,7 +96,8 @@ def home():
                 print(e)
                 error_in = new_msg
     
-    rendered_messages = render_messages(chatbot.messages)
+    display_messages = get_display_messages()
+    rendered_messages = render_messages(display_messages)
     return render_template(
         "index.html",
         messages=rendered_messages,
