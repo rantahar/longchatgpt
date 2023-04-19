@@ -33,12 +33,14 @@
                             Summary
                         </div>
                         <div class="card-body">
-                            <strong>{{ message.role }}</strong>{{ message.content | safe }}
+                            <strong>{{ message.role }}</strong>
+                            <p>{{ message.content | safe }}</p>
                         </div>
                     </div>
                     {% else %}
                     <div class="message mb-2 text-lg">
-                        <strong>{{ message.role }}</strong>{{ message.content | safe }}
+                        <strong>{{ message.role }}</strong>
+                        <p>{{ message.content | safe }}</p>
                     </div>
                     {% endif %}
                     
