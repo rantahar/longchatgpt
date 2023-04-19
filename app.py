@@ -62,9 +62,8 @@ def get_display_messages():
     new_messages = [dict(m, is_summary=False) for m in chatbot.new_messages()]
     old_messages = [dict(m, is_summary=False) for m in chatbot.old_messages()]
 
-    new_messages[0]["is_system"] = True
-    new_messages[1]["is_summary_prompt"] = True
-    new_messages[2]["is_summary"] = True
+    new_messages[0]["is_summary"] = True
+    new_messages[1]["is_summary"] = True
 
     return old_messages + new_messages
 
