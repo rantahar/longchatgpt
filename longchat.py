@@ -57,11 +57,12 @@ class LongChat():
     def last_message_index(self, messages=None):
         if messages is None:
             messages = self.messages
-        index = -20
+        index = -min([len(messages), 20])
         while num_tokens_from_messages(messages[index:]) > self.max_tokens:
             index=index+1
-        if index > -2:
-            index = -2
+        if index > -self.min_messages:
+            index = -self.min_messages
+        print(f"{-index} messages with {num_tokens_from_messages(messages[index:])} tokens")
         return index
 
     def old_messages(self):
@@ -124,7 +125,8 @@ class LongChat():
 
     def new_message(self, user_message):
         print(self.index)
-        self.messages.append({"role": "user", "content": user_message})
+        if user_message != "":
+            self.messages.append({"role": "user", "content": user_message})
         new_messages = self.new_messages()
         print(f"sending {len(new_messages)} messages with {num_tokens_from_messages(new_messages)} tokens")
         try: 
