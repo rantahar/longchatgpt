@@ -39,7 +39,7 @@ def render_with_markdown(markdown_str):
 
         markdown_str = markdown_str.replace(f'```{code_block}\n```', replacement)
 
-    return markdown.markdown(markdown_str)
+    return markdown_str #markdown.markdown(markdown_str)
 
 
 def render_messages(messages):
