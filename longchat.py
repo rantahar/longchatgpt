@@ -18,21 +18,24 @@ class LongChat():
         summarize_every = 2,
         summary_similarity_threshold = 0.2,
         max_tokens = 512,
+        min_messages = 3,
         conversations_path = "conversations/"
     ):
         self.conversations_path = conversations_path
         self.conversation = conversation
         self.messages = []
-        self.summary = "We have not started the conversation yet."
+        self.summary = {"role": "user", "content": "We have not started the conversation yet."}
+        self.first_summary = True
         self.index = 0
         self.summarize_every = summarize_every
         self.summary_similarity_threshold = summary_similarity_threshold
         self.summary_rejected = False
         self.model = model
-        self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance."""
         self.system_message = """You are a helpful assistant. You will use conversation summaries to rember the context of the conversation and to continue it naturally."""
+        self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance."""
         self.max_summary_length = max_summary_length
         self.max_tokens = max_tokens
+        self.min_messages = min_messages
 
         self.read_conversation(conversation)
 
@@ -45,6 +48,8 @@ class LongChat():
             self.messages = content["messages"]
         if "summary" in content.keys():
             self.summary = content["summary"]
+            if self.summary["content"] != "We have not started the conversation yet.":
+                self.first_summary = False
 
         # Define initial variables
         self.index = len(self.messages)//2
@@ -67,8 +72,7 @@ class LongChat():
             messages = self.messages
         index = self.last_message_index(messages)
         short = messages[index:]
-        short.insert(0, self.summary)
-        short.insert(0, {"role": "user", "content": self.summary_prompt})
+        short.insert(0, {"role": "system", "content": f"This is a summary you wrote for yourself: {self.summary['content']}"})
         short.insert(0, {"role": "system", "content": self.system_message})
         return short
     
@@ -76,11 +80,15 @@ class LongChat():
         print("summarizing")
         messages = self.new_messages(messages)
         messages.append({"role": "user", "content": self.summary_prompt})
-        print(f"sending {len(messages)} messages with {num_tokens_from_messages(messages)} tokens")
         summary = openai.ChatCompletion.create(
           model=self.model, messages=messages
         ).choices[0].message.content
         
+        if self.first_summary:
+            self.summary = {"role": "assistant", "content": summary}
+            self.first_summary = False
+            return
+
         old_summary = self.summary["content"]
         similarity = 1 - distance(old_summary.lower(), summary.lower()) / max(len(old_summary), len(summary))
         if similarity >= self.summary_similarity_threshold:
@@ -112,7 +120,7 @@ class LongChat():
 
     def dump_conversation(self):
         with open(self.messages_file, 'w') as outfile:
-            json.dump({"summary": self.summary, "messages": self.messages[1:]}, outfile, indent=4)
+            json.dump({"summary": self.summary, "messages": self.messages}, outfile, indent=4)
 
     def new_message(self, user_message):
         print(self.index)
@@ -131,7 +139,7 @@ class LongChat():
         
         self.dump_conversation()
 
-        if self.summary_rejected or self.index % self.summarize_every == 0 and self.index > 0:
+        if self.summary_rejected or self.first_summary or self.index % self.summarize_every == 0 and self.index > 0:
             try:
                 self.summarize_chatgpt()
             except Exception as e:
