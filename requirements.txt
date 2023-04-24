@@ -2,3 +2,6 @@ flask
 openai
 pygments
 tiktoken
+numpy
+Levenshtein
+markdown
