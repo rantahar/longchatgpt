@@ -17,7 +17,7 @@ class LongChat():
         model = "gpt-3.5-turbo",
         summarize_every = 2,
         summary_similarity_threshold = 0.2,
-        max_tokens = 512,
+        max_tokens = 1024,
         min_messages = 3,
         conversations_path = "conversations/"
     ):
@@ -25,13 +25,19 @@ class LongChat():
         self.conversation = conversation
         self.messages = []
         self.summary = {"role": "user", "content": "We have not started the conversation yet."}
+        self.notes =  {}
         self.first_summary = True
         self.index = 0
         self.summarize_every = summarize_every
         self.summary_similarity_threshold = summary_similarity_threshold
         self.summary_rejected = False
         self.model = model
-        self.system_message = """You are a helpful assistant. You will use conversation summaries to rember the context of the conversation and to continue it naturally."""
+        self.system_message = \
+"""You are a helpful AI assistant. You will use notes and the summary to maintain a coherent conversation and offer helpful advice.
+
+- Your memory is limited, so store useful information in notes. Notes are stored permanently into files.
+- When you generate code, you will be careful to not plagiarize any existing code.
+"""
         self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance."""
         self.max_summary_length = max_summary_length
         self.max_tokens = max_tokens
@@ -50,9 +56,18 @@ class LongChat():
             self.summary = content["summary"]
             if self.summary["content"] != "We have not started the conversation yet.":
                 self.first_summary = False
+        if "notes" in content.keys():
+            self.notes = content["notes"]
 
         # Define initial variables
         self.index = len(self.messages)//2
+
+    def check_notes(self):
+        for message in self.messages:
+            for keyword, content in self.notes.items():
+                if keyword in message:
+                    message += f"\nReminder: There is a note for the keyword '{keyword}' - {content}"
+        return message
     
     def last_message_index(self, messages=None):
         if messages is None:
@@ -121,7 +136,11 @@ class LongChat():
 
     def dump_conversation(self):
         with open(self.messages_file, 'w') as outfile:
-            json.dump({"summary": self.summary, "messages": self.messages}, outfile, indent=4)
+            json.dump({
+                "summary": self.summary,
+                "messages": self.messages,
+                "notes": self.notes,
+            }, outfile, indent=4)
 
     def new_message(self, user_message):
         print(self.index)

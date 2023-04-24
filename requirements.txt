@@ -1,4 +1,6 @@
 flask
+numpy
 openai
 pygments
 tiktoken
+Levenshtein

@@ -1,1 +1,8 @@
-[]
+{
+    "summary": {
+        "role": "assistant",
+        "content": "We have not started the conversation yet."
+    },
+    "messages": [
+    ]
+}

@@ -15,9 +15,9 @@ conversations_path = "conversations/"
 
 chatbot = LongChat()
 
-def render_with_markdown(markdown_str):
-    markdown_str = escape(markdown_str)
-    code_blocks = re.findall(r'```(.*?)\n```', markdown_str, re.DOTALL)
+def render_with_markdown(message_str):
+    message_str = escape(message_str)
+    code_blocks = re.findall(r'```(.*?)\n```', message_str, re.DOTALL)
     for code_block in code_blocks:
         code_lines = code_block.split("\n")[1:]
         language = code_block.split("\n")[0].strip()
@@ -37,9 +37,12 @@ def render_with_markdown(markdown_str):
         else:
             replacement = ''
 
-        markdown_str = markdown_str.replace(f'```{code_block}\n```', replacement)
+        message_str = message_str.replace(f'```{code_block}\n```', replacement)
+    message_str = message_str.replace('\n', '<br>')
 
-    return markdown_str #markdown.markdown(markdown_str)
+    return message_str
+
+#markdown.markdown(markdown_str)
 
 
 def render_messages(messages):
