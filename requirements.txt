@@ -4,3 +4,4 @@ openai
 pygments
 tiktoken
 Levenshtein
+markdown
