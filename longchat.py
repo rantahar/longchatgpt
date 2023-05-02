@@ -12,13 +12,13 @@ with open('api_key', 'r') as file1:
 class LongChat():
     def __init__(
         self,
-        conversation = "summary_chatgpt.json",
+        conversation = "default.json",
         max_summary_length = 120,
         model = "gpt-3.5-turbo",
-        summarize_every = 2,
+        summarize_every = 3,
         summary_similarity_threshold = 0.2,
         max_tokens = 1024,
-        min_messages = 3,
+        min_messages = 6,
         conversations_path = "conversations/"
     ):
         self.conversations_path = conversations_path
@@ -39,6 +39,16 @@ class LongChat():
 - When you generate code, you will be careful to not plagiarize any existing code.
 """
         self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance."""
+        self.note_prompt = """Extract short, useful notes from the summary above. Provide at most 3 notes. The notes should help you (chatGPT) remember the conversation, so don't store information chatGPT already knows.
+
+Each note must follow the format:
+keyword list : note message : note importance (0-1)
+
+For example:
+chatbot, assistant, AI: You are a helpful AI assistant. : 0.1
+
+Your reply must only contain notes following this syntax, and no other text.
+"""
         self.max_summary_length = max_summary_length
         self.max_tokens = max_tokens
         self.min_messages = min_messages
@@ -55,6 +65,7 @@ class LongChat():
         if "summary" in content.keys():
             self.summary = content["summary"]
             if self.summary["content"] != "We have not started the conversation yet.":
+                print("not first")
                 self.first_summary = False
         if "notes" in content.keys():
             self.notes = content["notes"]
@@ -62,12 +73,51 @@ class LongChat():
         # Define initial variables
         self.index = len(self.messages)//2
 
-    def check_notes(self):
-        for message in self.messages:
-            for keyword, content in self.notes.items():
-                if keyword in message:
-                    message += f"\nReminder: There is a note for the keyword '{keyword}' - {content}"
-        return message
+    def extract_notes(self, message):
+        for line in message.split("\n"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                print(line)
+                keyword_list, note_msg, note_imp = line.split(":")
+            except ValueError:
+                continue
+            # Create a list of individual keywords
+            # If a keyword already exists in the dict, append the note message and importance to that keyword's tuple
+            self.notes.append({
+                "keywords": keyword_list.strip().lower(),
+                "note": note_msg.strip().lower(),
+                "importance": note_imp.strip().lower()
+            })
+
+    def build_notes_message(self, messages, max_notes = 5):
+        messages = "\n".join([message["content"] for message in messages]).lower()
+        
+        matching_notes = []
+        for note in self.notes:
+            loc = -1
+            keywords = note["keywords"].split(", ")
+            for keyword in keywords:
+                k_loc = messages.rfind(keyword)
+                if k_loc > loc:
+                    loc = k_loc
+            if loc != -1:
+                matching_notes.append(note.copy())
+                matching_notes[-1]["loc"] = loc
+
+        if len(matching_notes) == 0:
+            return ""
+
+        # Sort by importance
+        matching_notes = sorted(matching_notes, key=lambda x:x["loc"], reverse=True)
+        
+        notes_message = "Useful notes:"
+        for note in matching_notes[-max_notes:]:
+            notes_message += f"\n{note['keywords']} - {note['note']}"
+            print(note["loc"])
+
+        return notes_message
     
     def last_message_index(self, messages=None):
         if messages is None:
@@ -88,7 +138,12 @@ class LongChat():
             messages = self.messages
         index = self.last_message_index(messages)
         short = messages[index:]
-        short.insert(0, {"role": "system", "content": f"This is a summary you wrote for yourself: {self.summary['content']}"})
+
+        summary = f"This is a summary you wrote for yourself: {self.summary['content']}"
+        notes = self.build_notes_message(short)
+        if notes:
+            summary += "\n\n" + notes
+        short.insert(0, {"role": "system", "content": summary})
         short.insert(0, {"role": "system", "content": self.system_message})
         return short
     
@@ -116,6 +171,16 @@ class LongChat():
             print(summary)
             self.summary_rejected = True
 
+    def create_notes(self, messages=None):
+        print("creating notes")
+        summary = f"This is a summary you wrote for yourself: {self.summary['content']}"
+        messages = [{"role": "assistant", "content": summary}]
+        messages.append({"role": "user", "content": self.note_prompt})
+        message = openai.ChatCompletion.create(
+          model=self.model, messages=messages
+        ).choices[0].message.content
+        print(message)
+        self.extract_notes(message)
 
     def summarize_api(self, messages):
         print("summarizing")
@@ -156,16 +221,16 @@ class LongChat():
             self.messages.pop()
             raise(e)
         
-        self.messages.append({"role": "assistant", "content": result.choices[0].message.content})
+        message = result.choices[0].message.content
+        self.messages.append({"role": "assistant", "content": message})
         
         self.dump_conversation()
 
         if self.summary_rejected or self.first_summary or self.index % self.summarize_every == 0 and self.index > 0:
-            try:
-                self.summarize_chatgpt()
-            except Exception as e:
-                self.messages.pop()
-                raise(e)
+            self.summarize_chatgpt()
+
+        if  self.index % self.summarize_every == 0 and self.index > 0:
+            self.create_notes()
 
             self.dump_conversation()
 
