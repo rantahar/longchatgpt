@@ -14,10 +14,10 @@ class LongChat():
         self,
         conversation = "default.json",
         max_summary_length = 120,
-        model = "gpt-3.5-turbo",
+        model = "gpt-3.5-turbo-0613",
         summarize_every = 3,
         summary_similarity_threshold = 0.2,
-        max_tokens = 1024,
+        max_tokens = 3000,
         min_messages = 6,
         conversations_path = "conversations/"
     ):
@@ -27,7 +27,7 @@ class LongChat():
         self.summary = {"role": "user", "content": "We have not started the conversation yet."}
         self.notes =  {}
         self.first_summary = True
-        self.index = 0
+        self.messages_since_summary = 0
         self.summarize_every = summarize_every
         self.summary_similarity_threshold = summary_similarity_threshold
         self.summary_rejected = False
@@ -64,14 +64,16 @@ Your reply must only contain notes following this syntax, and no other text.
             self.messages = content["messages"]
         if "summary" in content.keys():
             self.summary = content["summary"]
-            if self.summary["content"] != "We have not started the conversation yet.":
-                print("not first")
-                self.first_summary = False
+        if "first_summary" in content.keys():
+            self.first_summary = content["first_summary"]
         if "notes" in content.keys():
             self.notes = content["notes"]
-
-        # Define initial variables
-        self.index = len(self.messages)//2
+        if "system_message" in content:
+            self.system_message = content["system_message"]
+        if "messages_since_summary" in content:
+            self.messages_since_summary = content["messages_since_summary"]
+        else:
+            self.messages_since_summary = 0
 
     def extract_notes(self, message):
         for line in message.split("\n"):
@@ -203,37 +205,75 @@ Your reply must only contain notes following this syntax, and no other text.
         with open(self.messages_file, 'w') as outfile:
             json.dump({
                 "summary": self.summary,
+                "first_summary": self.first_summary,
                 "messages": self.messages,
                 "notes": self.notes,
+                "system_message": self.system_message,
+                "messages_since_summary": self.messages_since_summary
             }, outfile, indent=4)
 
     def new_message(self, user_message):
-        print(self.index)
+        print("messages_since_summary", self.messages_since_summary, self.first_summary)
         if user_message != "":
             self.messages.append({"role": "user", "content": user_message})
         new_messages = self.new_messages()
         print(f"sending {len(new_messages)} messages with {num_tokens_from_messages(new_messages)} tokens")
         try: 
             result = openai.ChatCompletion.create(
-              model=self.model, messages=new_messages
+              model=self.model, messages=new_messages,
+              functions=[
+                {
+                    "name": "update_summary",
+                    "description": "Update the current conversation summary. Use this when new useful information is available.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "summary": {
+                                "type": "string",
+                                "description": "A summary of the current conversation.",
+                            }
+                        },
+                        "required": ["location"],
+                    },
+                }
+            ],
+            function_call="auto",
             )
         except Exception as e:
             self.messages.pop()
             raise(e)
         
+        message = result.choices[0].message
+
+        if message.get("function_call"):
+            function_name = message["function_call"]["name"]
+            summary = message.get("summary")
+            print(message)
+            result = openai.ChatCompletion.create(
+                model=self.model,
+                messages=new_messages + [
+                    message,
+                    {
+                        "role": "function",
+                        "name": function_name,
+                        "content": "summary updated",
+                    },
+                ],
+            )
+
+        
         message = result.choices[0].message.content
         self.messages.append({"role": "assistant", "content": message})
         
+        self.messages_since_summary += 1
         self.dump_conversation()
 
-        if self.summary_rejected or self.first_summary or self.index % self.summarize_every == 0 and self.index > 0:
+        if (self.messages_since_summary >= self.summarize_every) or self.first_summary:
             self.summarize_chatgpt()
-
-        if  self.index % self.summarize_every == 0 and self.index > 0:
             self.create_notes()
+            if not self.summary_rejected:
+                self.messages_since_summary = 0
 
             self.dump_conversation()
-
-        self.index += 1
     
 

@@ -42,8 +42,6 @@ def render_with_markdown(message_str):
 
     return message_str
 
-#markdown.markdown(markdown_str)
-
 
 def render_messages(messages):
     rendered_messages = []
@@ -82,21 +80,23 @@ def home():
 
     conversation_id = request.args.get("conversation_id")
     if not conversation_id and request.method == "POST":
-        conversation_id = request.form["conversation_id"]
+        if "conversation_id" in request.form:
+            conversation_id = request.form["conversation_id"]
     if conversation_id:
         chatbot.read_conversation(conversation_id)
     else:
         chatbot.read_conversation(chatbot.conversation)
 
     if request.method == "POST":
-        new_msg = request.form["new_message"]
-        if new_msg:
-            try:
-                chatbot.new_message(new_msg)
-                error_in = ""
-            except Exception as e:
-                print(e)
-                error_in = new_msg
+        if "new_message" in request.form:
+            new_msg = request.form["new_message"]
+            if new_msg:
+                try:
+                    chatbot.new_message(new_msg)
+                    error_in = ""
+                except Exception as e:
+                    print(e)
+                    error_in = new_msg
     
     display_messages = get_display_messages()
     rendered_messages = render_messages(display_messages)
@@ -105,9 +105,19 @@ def home():
         messages=rendered_messages,
         conversations=conversations,
         active_conversation_id=chatbot.conversation,
-        error_in=error_in 
+        error_in=error_in,
+        system_message=chatbot.system_message
     )
 
+
+@app.route("/save_system_message", methods=["GET", "POST"])
+def save_system_message():
+    if request.method == "POST":
+        print(request.form)
+        system_message = request.form["system_message"]
+        chatbot.system_message = system_message
+        chatbot.dump_conversation()
+    return home()
 
 
 if __name__ == "__main__":
