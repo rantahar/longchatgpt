@@ -3,7 +3,10 @@ import openai
 from tokens import num_tokens_from_messages
 import os
 import numpy as np
+import functions
 from Levenshtein import distance
+
+
 
 with open('api_key', 'r') as file1:
     openai.api_key = file1.readlines()[0].strip()
@@ -15,9 +18,9 @@ class LongChat():
         conversation = "default.json",
         max_summary_length = 120,
         model = "gpt-3.5-turbo-0613",
-        summarize_every = 3,
+        summarize_every = 5,
         summary_similarity_threshold = 0.2,
-        max_tokens = 3000,
+        max_tokens = 2500,
         min_messages = 6,
         conversations_path = "conversations/"
     ):
@@ -212,62 +215,7 @@ Your reply must only contain notes following this syntax, and no other text.
                 "messages_since_summary": self.messages_since_summary
             }, outfile, indent=4)
 
-    def new_message(self, user_message):
-        print("messages_since_summary", self.messages_since_summary, self.first_summary)
-        if user_message != "":
-            self.messages.append({"role": "user", "content": user_message})
-        new_messages = self.new_messages()
-        print(f"sending {len(new_messages)} messages with {num_tokens_from_messages(new_messages)} tokens")
-        try: 
-            result = openai.ChatCompletion.create(
-              model=self.model, messages=new_messages,
-              functions=[
-                {
-                    "name": "update_summary",
-                    "description": "Update the current conversation summary. Use this when new useful information is available.",
-                    "parameters": {
-                        "type": "object",
-                        "properties": {
-                            "summary": {
-                                "type": "string",
-                                "description": "A summary of the current conversation.",
-                            }
-                        },
-                        "required": ["location"],
-                    },
-                }
-            ],
-            function_call="auto",
-            )
-        except Exception as e:
-            self.messages.pop()
-            raise(e)
-        
-        message = result.choices[0].message
-
-        if message.get("function_call"):
-            function_name = message["function_call"]["name"]
-            summary = message.get("summary")
-            print(message)
-            result = openai.ChatCompletion.create(
-                model=self.model,
-                messages=new_messages + [
-                    message,
-                    {
-                        "role": "function",
-                        "name": function_name,
-                        "content": "summary updated",
-                    },
-                ],
-            )
-
-        
-        message = result.choices[0].message.content
-        self.messages.append({"role": "assistant", "content": message})
-        
-        self.messages_since_summary += 1
-        self.dump_conversation()
-
+    def check_summary(self):
         if (self.messages_since_summary >= self.summarize_every) or self.first_summary:
             self.summarize_chatgpt()
             self.create_notes()
@@ -275,5 +223,75 @@ Your reply must only contain notes following this syntax, and no other text.
                 self.messages_since_summary = 0
 
             self.dump_conversation()
+
+    def handle_function_call(self, function_call):
+        print("function call message:", function_call)
+        function_name = function_call["name"]
+        parameters = function_call.get("arguments", "{}")
+        if function_name in functions.implementations:
+            function = functions.implementations[function_name]
+            try:
+                result, system_note = function(**json.loads(parameters))
+            except Exception as e:
+                print(e)
+                print("exception in function call")
+                result = "exception in function call:" +str(e)
+                system_note = None
+        else:
+            print("no such function")
+            result = "no such function"
+            system_note = None
+
+        messages = self.new_messages()
+        messages.append({"role": "function", "name": function_name, "content": result})
+        messages = self.new_messages(messages)
+        result = openai.ChatCompletion.create(
+            model=self.model,
+            messages=messages
+        )
+        print(result)
+        if system_note:
+            self.messages.append({"role": "system", "content": system_note})
+        
+        message = result.choices[0].message.content
+        self.messages.append({"role": "assistant", "content": message})
+
+        self.messages_since_summary += 1
+        self.dump_conversation()
+
+        self.check_summary()
+        return result
+    
+    def new_message(self, user_message):
+        print("messages_since_summary", self.messages_since_summary, self.first_summary)
+        if user_message != "":
+            self.messages.append({"role": "user", "content": user_message})
+            self.dump_conversation()
+        new_messages = self.new_messages()
+        print(f"sending {len(new_messages)} messages with {num_tokens_from_messages(new_messages)} tokens")
+        try: 
+            result = openai.ChatCompletion.create(
+              model=self.model, messages=new_messages,
+              functions=functions.definitions,
+            function_call="auto",
+            )
+            print(result)
+        except Exception as e:
+            self.messages.pop()
+            raise(e)
+        
+
+        message = result.choices[0].message
+        while message.get("function_call"):
+            return message
+        
+        message = result.choices[0].message.content
+        self.messages.append({"role": "assistant", "content": message})
+        
+        self.messages_since_summary += 1
+        self.dump_conversation()
+
+        self.check_summary()
+        return {}
     
 

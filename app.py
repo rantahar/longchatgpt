@@ -1,12 +1,14 @@
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, redirect, url_for
 from longchat import LongChat
 from pygments import highlight
 from pygments.lexers import get_lexer_by_name, TextLexer
 from pygments.formatters import html
+import traceback
 import markdown
 import re
 from html import escape, unescape
 import os
+import json
 
 app = Flask(__name__)
 
@@ -86,17 +88,6 @@ def home():
         chatbot.read_conversation(conversation_id)
     else:
         chatbot.read_conversation(chatbot.conversation)
-
-    if request.method == "POST":
-        if "new_message" in request.form:
-            new_msg = request.form["new_message"]
-            if new_msg:
-                try:
-                    chatbot.new_message(new_msg)
-                    error_in = ""
-                except Exception as e:
-                    print(e)
-                    error_in = new_msg
     
     display_messages = get_display_messages()
     rendered_messages = render_messages(display_messages)
@@ -109,6 +100,50 @@ def home():
         system_message=chatbot.system_message
     )
 
+@app.route("/new_message", methods=["POST"])
+def new_message():
+    global error_in
+    if request.method == "POST":
+        if "new_message" in request.form:
+            new_msg = request.form["new_message"]
+            if new_msg:
+                try:
+                    result = chatbot.new_message(new_msg)
+                    if "function_call" in result:
+                        return redirect(url_for("confirm_function_call", function_call=result["function_call"], **request.args))
+                    else:
+                        error_in = ""
+
+                except Exception as e:
+                    print(e)
+                    print(traceback.format_exc())
+                    error_in = new_msg
+    return redirect(url_for("home"))
+
+
+@app.route("/confirm_function_call", methods=["GET", "POST"])
+def confirm_function_call():
+    global error_in
+    if request.method == "POST":
+        confirmed = request.form.get("confirmed")
+        if confirmed == "yes":
+            try:
+                # Execute the function call
+                result = chatbot.handle_function_call(json.loads(request.form.get("function_call")))
+                print(result)
+                if "function_call" in result:
+                    return redirect(url_for("confirm_function_call", function_call=result["function_call"], **request.args))
+                else:
+                    error_in = ""
+                    return redirect(url_for("home", **request.args))
+            except Exception as e:
+                print(e)
+        else:
+            return redirect(url_for("home", **request.args))
+    
+    function_call = request.args.get("function_call")
+    return render_template("confirmation.html", function_call=function_call)
+
 
 @app.route("/save_system_message", methods=["GET", "POST"])
 def save_system_message():
@@ -117,7 +152,7 @@ def save_system_message():
         system_message = request.form["system_message"]
         chatbot.system_message = system_message
         chatbot.dump_conversation()
-    return home()
+    return redirect(url_for("home", **request.args))
 
 
 if __name__ == "__main__":

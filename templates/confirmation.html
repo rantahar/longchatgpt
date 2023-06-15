@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Confirmation</title>
+</head>
+<body>
+    <h1>Function Call Confirmation</h1>
+    <p>Are you sure you want to execute the following function call?</p>
+    <p>Function Call: {{ function_call }}</p>
+
+    <form action="/confirm_function_call" method="POST">
+        <input type="hidden" name="function_call" value="{{ function_call }}">
+        <label for="confirmed_yes">
+            <input type="radio" id="confirmed_yes" name="confirmed" value="yes">
+            Yes
+        </label>
+        <label for="confirmed_no">
+            <input type="radio" id="confirmed_no" name="confirmed" value="no">
+            No
+        </label>
+        <br>
+        <input type="submit" value="Submit">
+    </form>
+</body>
+</html>
