@@ -5,3 +5,5 @@ pygments
 tiktoken
 Levenshtein
 markdown
+sentence_transformers
+tqdm

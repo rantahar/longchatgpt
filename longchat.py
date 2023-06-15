@@ -4,6 +4,7 @@ from tokens import num_tokens_from_messages
 import os
 import numpy as np
 import functions
+import embedder
 from Levenshtein import distance
 
 
@@ -20,7 +21,7 @@ class LongChat():
         model = "gpt-3.5-turbo-0613",
         summarize_every = 5,
         summary_similarity_threshold = 0.2,
-        max_tokens = 2500,
+        max_tokens = 1000,
         min_messages = 6,
         conversations_path = "conversations/"
     ):
@@ -77,50 +78,21 @@ Your reply must only contain notes following this syntax, and no other text.
             self.messages_since_summary = content["messages_since_summary"]
         else:
             self.messages_since_summary = 0
-
-    def extract_notes(self, message):
-        for line in message.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                print(line)
-                keyword_list, note_msg, note_imp = line.split(":")
-            except ValueError:
-                continue
-            # Create a list of individual keywords
-            # If a keyword already exists in the dict, append the note message and importance to that keyword's tuple
-            self.notes.append({
-                "keywords": keyword_list.strip().lower(),
-                "note": note_msg.strip().lower(),
-                "importance": note_imp.strip().lower()
-            })
+        if "memory_file" in content.keys():
+            self.memory_file = content["memory_file"]
+        else:
+            self.memory_file = self.conversation.replace(".json", "_memory.json")
 
     def build_notes_message(self, messages, max_notes = 5):
-        messages = "\n".join([message["content"] for message in messages]).lower()
-        
-        matching_notes = []
-        for note in self.notes:
-            loc = -1
-            keywords = note["keywords"].split(", ")
-            for keyword in keywords:
-                k_loc = messages.rfind(keyword)
-                if k_loc > loc:
-                    loc = k_loc
-            if loc != -1:
-                matching_notes.append(note.copy())
-                matching_notes[-1]["loc"] = loc
+        if not os.path.exists(self.memory_file):
+            embedder.encode_and_save_conversation_from_file(os.path.join(self.conversations_path, self.conversation), self.memory_file)
 
-        if len(matching_notes) == 0:
-            return ""
+        sentences = embedder.retrieve_sentences(messages[-1]["content"], self.memory_file, max_notes)
 
-        # Sort by importance
-        matching_notes = sorted(matching_notes, key=lambda x:x["loc"], reverse=True)
-        
-        notes_message = "Useful notes:"
-        for note in matching_notes[-max_notes:]:
-            notes_message += f"\n{note['keywords']} - {note['note']}"
-            print(note["loc"])
+        notes_message = "Relevant sentences you remember:"
+        for note in sentences:
+            print(note)
+            notes_message += f"\n{note[0]}"
 
         return notes_message
     
@@ -176,17 +148,6 @@ Your reply must only contain notes following this syntax, and no other text.
             print(summary)
             self.summary_rejected = True
 
-    def create_notes(self, messages=None):
-        print("creating notes")
-        summary = f"This is a summary you wrote for yourself: {self.summary['content']}"
-        messages = [{"role": "assistant", "content": summary}]
-        messages.append({"role": "user", "content": self.note_prompt})
-        message = openai.ChatCompletion.create(
-          model=self.model, messages=messages
-        ).choices[0].message.content
-        print(message)
-        self.extract_notes(message)
-
     def summarize_api(self, messages):
         print("summarizing")
         messages = self.new_messages()
@@ -216,9 +177,14 @@ Your reply must only contain notes following this syntax, and no other text.
             }, outfile, indent=4)
 
     def check_summary(self):
+        if not os.path.exists(self.memory_file):
+            embedder.encode_and_save_conversation_from_file(os.path.join(self.conversations_path, self.conversation), self.memory_file)
+        else:
+            embedder.encode_and_append(self.messages[-2]["content"], self.memory_file)
+            embedder.encode_and_append(self.messages[-1]["content"], self.memory_file)
+
         if (self.messages_since_summary >= self.summarize_every) or self.first_summary:
             self.summarize_chatgpt()
-            self.create_notes()
             if not self.summary_rejected:
                 self.messages_since_summary = 0
 

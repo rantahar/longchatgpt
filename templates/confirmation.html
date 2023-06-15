@@ -10,16 +10,8 @@
 
     <form action="/confirm_function_call" method="POST">
         <input type="hidden" name="function_call" value="{{ function_call }}">
-        <label for="confirmed_yes">
-            <input type="radio" id="confirmed_yes" name="confirmed" value="yes">
-            Yes
-        </label>
-        <label for="confirmed_no">
-            <input type="radio" id="confirmed_no" name="confirmed" value="no">
-            No
-        </label>
-        <br>
-        <input type="submit" value="Submit">
+        <button type="submit" name="confirmed" value="yes">Yes</button>
+        <button type="submit" name="confirmed" value="no">No</button>
     </form>
 </body>
 </html>
