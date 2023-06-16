@@ -6,7 +6,7 @@ import numpy as np
 import functions
 import embedder
 from Levenshtein import distance
-
+import traceback
 
 
 with open('api_key', 'r') as file1:
@@ -21,7 +21,7 @@ class LongChat():
         model = "gpt-3.5-turbo-0613",
         summarize_every = 5,
         summary_similarity_threshold = 0.2,
-        max_tokens = 1000,
+        max_tokens = 2000,
         min_messages = 6,
         conversations_path = "conversations/"
     ):
@@ -60,6 +60,7 @@ Your reply must only contain notes following this syntax, and no other text.
         self.read_conversation(conversation)
 
     def read_conversation(self, conversation):
+        print(traceback.format_exc())
         self.conversation = conversation
         self.messages_file = os.path.join(self.conversations_path, conversation)
         with open(self.messages_file, 'r') as f:
@@ -83,15 +84,20 @@ Your reply must only contain notes following this syntax, and no other text.
         else:
             self.memory_file = self.conversation.replace(".json", "_memory.json")
 
-    def build_notes_message(self, messages, max_notes = 5):
+    def build_notes_message(self, messages, max_notes = 10):
         if not os.path.exists(self.memory_file):
             embedder.encode_and_save_conversation_from_file(os.path.join(self.conversations_path, self.conversation), self.memory_file)
 
-        sentences = embedder.retrieve_sentences(messages[-1]["content"], self.memory_file, max_notes)
+        if len(messages) == 0:
+            return None
+        
+        query = '\n\n'.join([m["content"] for m in messages[-4:-1]])
+        sentences = embedder.retrieve_sentences(query, self.memory_file, max_notes)
 
         notes_message = "Relevant sentences you remember:"
         for note in sentences:
-            print(note)
+            if len(note) > 500:
+                continue
             notes_message += f"\n{note[0]}"
 
         return notes_message
@@ -111,18 +117,24 @@ Your reply must only contain notes following this syntax, and no other text.
         return list(self.messages[:self.last_message_index()])
 
     def new_messages(self, messages=None):
+        """ Get the latest messages that fit in the token limit """
         if messages is None:
             messages = self.messages
         index = self.last_message_index(messages)
         short = messages[index:]
 
         summary = f"This is a summary you wrote for yourself: {self.summary['content']}"
-        notes = self.build_notes_message(short)
-        if notes:
-            summary += "\n\n" + notes
         short.insert(0, {"role": "system", "content": summary})
         short.insert(0, {"role": "system", "content": self.system_message})
         return short
+    
+    def messages_to_send(self, messages=None):
+        """ Get messages and include notes in the system message """
+        messages = self.new_messages(messages)
+        notes = self.build_notes_message(messages)
+        messages[1]["content"] += "\n\n" + notes
+        print("SYSTEM MESSAGE:\n", messages[1]["content"])
+        return messages
     
     def summarize_chatgpt(self, messages=None):
         print("summarizing")
@@ -147,23 +159,6 @@ Your reply must only contain notes following this syntax, and no other text.
             print(old_summary)
             print(summary)
             self.summary_rejected = True
-
-    def summarize_api(self, messages):
-        print("summarizing")
-        messages = self.new_messages()
-        self.messages.append({"role": "user", "content": self.summary_prompt})
-        print(f"sending {len(messages)} messages with {num_tokens_from_messages(messages)} tokens")
-        result = openai.Completion.create(
-          engine="davinci",
-          prompt=(f"{self.summary_prompt}:\n{messages}\n\nSummary:"),
-          max_tokens=self.max_tokens,
-          temperature=0.5,
-          n = 1,
-          stop=None,
-          frequency_penalty=0,
-          presence_penalty=0
-        ).choices[0].text.strip()
-        self.messages.append({"role": "assistant", "content": result})
 
     def dump_conversation(self):
         with open(self.messages_file, 'w') as outfile:
@@ -210,7 +205,8 @@ Your reply must only contain notes following this syntax, and no other text.
 
         messages = self.new_messages()
         messages.append({"role": "function", "name": function_name, "content": result})
-        messages = self.new_messages(messages)
+        messages = self.messages_to_send(messages)
+        print(f"sending {len(new_messages)} messages with {num_tokens_from_messages(new_messages)} tokens")
         result = openai.ChatCompletion.create(
             model=self.model,
             messages=messages
@@ -233,7 +229,7 @@ Your reply must only contain notes following this syntax, and no other text.
         if user_message != "":
             self.messages.append({"role": "user", "content": user_message})
             self.dump_conversation()
-        new_messages = self.new_messages()
+        new_messages = self.messages_to_send()
         print(f"sending {len(new_messages)} messages with {num_tokens_from_messages(new_messages)} tokens")
         try: 
             result = openai.ChatCompletion.create(

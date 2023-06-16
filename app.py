@@ -60,6 +60,19 @@ def render_messages(messages):
     return rendered_messages
 
 
+def save_config():
+    with open("config.json", 'w') as outfile:
+        json.dump({
+            "conversation": chatbot.conversation
+        }, outfile, indent=4)
+
+
+def load_config():
+    with open("config.json", 'r') as infile:
+        config = json.load(infile)
+    chatbot.read_conversation(config["conversation"])
+
+
 def get_display_messages():
     print(f"displaying {len(chatbot.new_messages())} new messages")
     new_messages = [dict(m, is_summary=False) for m in chatbot.new_messages()]
@@ -73,24 +86,18 @@ def get_display_messages():
 
 error_in = ""
 
-@app.route("/", methods=["GET", "POST"])
+@app.route("/", methods=["GET"])
 def home():
     global error_in
+    load_config()
+
     conversations = []
     for filename in os.listdir(conversations_path):
         conversations.append(filename)
 
-    conversation_id = request.args.get("conversation_id")
-    if not conversation_id and request.method == "POST":
-        if "conversation_id" in request.form:
-            conversation_id = request.form["conversation_id"]
-    if conversation_id:
-        chatbot.read_conversation(conversation_id)
-    else:
-        chatbot.read_conversation(chatbot.conversation)
-    
     display_messages = get_display_messages()
     rendered_messages = render_messages(display_messages)
+
     return render_template(
         "index.html",
         messages=rendered_messages,
@@ -100,9 +107,27 @@ def home():
         system_message=chatbot.system_message
     )
 
+
+@app.route("/select_conversation", methods=["GET"])
+def select_conversation():
+    global error_in
+    load_config()
+
+    conversation_id = request.args.get("conversation_id")
+    if conversation_id:
+        chatbot.read_conversation(conversation_id)
+    else:
+        chatbot.read_conversation(chatbot.conversation)
+
+    save_config()
+    return redirect(url_for("home"))
+
+
 @app.route("/new_message", methods=["POST"])
 def new_message():
     global error_in
+    load_config()
+
     if request.method == "POST":
         if "new_message" in request.form:
             new_msg = request.form["new_message"]
@@ -110,7 +135,7 @@ def new_message():
                 try:
                     result = chatbot.new_message(new_msg)
                     if "function_call" in result:
-                        return redirect(url_for("confirm_function_call", function_call=result["function_call"], **request.args))
+                        return redirect(url_for("confirm_function_call", function_call=result["function_call"]))
                     else:
                         error_in = ""
 
@@ -124,6 +149,8 @@ def new_message():
 @app.route("/confirm_function_call", methods=["GET", "POST"])
 def confirm_function_call():
     global error_in
+
+    load_config()
     if request.method == "POST":
         confirmed = request.form.get("confirmed")
         if confirmed == "yes":
@@ -132,21 +159,23 @@ def confirm_function_call():
                 result = chatbot.handle_function_call(json.loads(request.form.get("function_call")))
                 print(result)
                 if "function_call" in result:
-                    return redirect(url_for("confirm_function_call", function_call=result["function_call"], **request.args))
+                    return redirect(url_for("confirm_function_call", function_call=result["function_call"]))
                 else:
                     error_in = ""
-                    return redirect(url_for("home", **request.args))
+                    return redirect(url_for("home"))
             except Exception as e:
                 print(e)
         else:
-            return redirect(url_for("home", **request.args))
+            return redirect(url_for("home"))
     
     function_call = request.args.get("function_call")
     return render_template("confirmation.html", function_call=function_call)
 
 
-@app.route("/save_system_message", methods=["GET", "POST"])
+@app.route("/save_system_message", methods=["POST"])
 def save_system_message():
+    load_config()
+
     if request.method == "POST":
         print(request.form)
         system_message = request.form["system_message"]

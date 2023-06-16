@@ -10,15 +10,33 @@ nltk.download('punkt')
 
 
 def encode_sentences(text):
-    sentences = nltk.sent_tokenize(text)
-    embeddings = model.encode(sentences)
+    sentences = []
+    embeddings = None
+
+    for line in text.split("\n"):
+        if line:
+            _sentences = nltk.sent_tokenize(line)
+            _sentences = [_s.strip() for _s in _sentences if len(_s) < 500]
+            _embeddings = model.encode(_sentences)
+            if _embeddings is None or _embeddings.ndim < 2:
+                continue
+            if embeddings is not None:
+                sentences += _sentences
+                embeddings = np.concatenate([embeddings, _embeddings], axis=0)
+            else:
+                sentences = _sentences
+                embeddings = _embeddings
+
     return sentences, embeddings
 
 
 def encode_and_save_sentences(text, filename):
     sentences, embeddings = encode_sentences(text)
     
-    data = {"sentences": sentences, "embeddings": embeddings.tolist()}
+    if embeddings is not None:
+        data = {"sentences": sentences, "embeddings": embeddings.tolist()}
+    else:
+        data = {"sentences": [], "embeddings": []}
     
     with open(filename, "w") as file:
         json.dump(data, file, indent=4)
@@ -41,18 +59,42 @@ def clean_message(text):
     return "\n".join(cleaned_lines)
 
 
+def check_and_remove_duplicates(sentences, embeddings):
+    unique_embeddings = []
+    unique_sentences = []
+    
+    for embedding, sentence in zip(embeddings, sentences):
+        # Convert embedding to tuple so it can be hashed and compared
+        embedding_tuple = tuple(embedding)
+        
+        if embedding_tuple not in unique_embeddings:
+            unique_embeddings.append(embedding_tuple)
+            unique_sentences.append(sentence)
+    
+    # Convert back to numpy arrays
+    unique_embeddings = np.array([embedding for embedding in unique_embeddings])
+    
+    return unique_sentences, unique_embeddings
+
+
 def encode_and_append(text, filename):
     with open(filename, "r") as file:
         data = json.load(file)
     sentences = data["sentences"]
-    embeddings = data["embeddings"]
+    embeddings = np.array(data["embeddings"])
 
     text = clean_message(text)
     _sentences, _embeddings = encode_sentences(text)
-    if _embeddings.ndim < 2:
+    if _embeddings is None or _embeddings.ndim < 2:
         return
-    sentences += _sentences
-    embeddings = np.concatenate([embeddings, _embeddings], axis=0)
+    if embeddings is not None and embeddings.ndim == 2:
+        sentences += _sentences
+        embeddings = np.concatenate([embeddings, _embeddings], axis=0)
+    else:
+        sentences = _sentences
+        embeddings = _embeddings 
+
+    sentences, embeddings = check_and_remove_duplicates(sentences, embeddings)
 
     data = {"sentences": sentences, "embeddings": embeddings.tolist()}
     with open(filename, "w") as file:
@@ -72,15 +114,20 @@ def encode_and_save_conversation_from_file(input_file, output_file):
         if content:
             content = clean_message(content)
             _sentences, _embeddings = encode_sentences(content)
-            if _embeddings.ndim < 2:
+            if _embeddings is None or _embeddings.ndim < 2:
                 continue
-            sentences += _sentences
             if embeddings is not None:
+                sentences += _sentences
                 embeddings = np.concatenate([embeddings, _embeddings], axis=0)
             else:
+                sentences = _sentences
                 embeddings = _embeddings
     
-    data = {"sentences": sentences, "embeddings": embeddings.tolist()}
+    if embeddings is not None:
+        data = {"sentences": sentences, "embeddings": embeddings.tolist()}
+    else:
+        data = {"sentences": [], "embeddings": []}
+
     with open(output_file, "w") as file:
         json.dump(data, file, indent=4)
 
@@ -97,12 +144,11 @@ def retrieve_sentences(query, filename, top_n=5):
     
     query_embedding = model.encode([query])[0]
     
-    similarities = []
-    for embedding in embeddings:
-        similarity = cosine_similarity(query_embedding, embedding)
-        similarities.append(similarity)
+    similarities = np.dot(embeddings, query_embedding) / (
+        np.linalg.norm(embeddings, axis=1) * np.linalg.norm(query_embedding)
+    )
     
-    sorted_indices = sorted(range(len(similarities)), key=lambda k: similarities[k], reverse=True)
+    sorted_indices = np.argsort(similarities)[::-1]
     top_indices = sorted_indices[:top_n]
     
     results = [(sentences[idx], similarities[idx]) for idx in top_indices]
