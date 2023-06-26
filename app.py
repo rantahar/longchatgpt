@@ -131,18 +131,17 @@ def new_message():
     if request.method == "POST":
         if "new_message" in request.form:
             new_msg = request.form["new_message"]
-            if new_msg:
-                try:
-                    result = chatbot.new_message(new_msg)
-                    if "function_call" in result:
-                        return redirect(url_for("confirm_function_call", function_call=result["function_call"]))
-                    else:
-                        error_in = ""
+            try:
+                result = chatbot.new_message(new_msg)
+                if "function_call" in result:
+                    return redirect(url_for("confirm_function_call", function_call=result["function_call"]))
+                else:
+                    error_in = ""
 
-                except Exception as e:
-                    print(e)
-                    print(traceback.format_exc())
-                    error_in = new_msg
+            except Exception as e:
+                print(e)
+                print(traceback.format_exc())
+                error_in = new_msg
     return redirect(url_for("home"))
 
 
@@ -165,6 +164,7 @@ def confirm_function_call():
                     return redirect(url_for("home"))
             except Exception as e:
                 print(e)
+                print(traceback.format_exc())
         else:
             return redirect(url_for("home"))
     

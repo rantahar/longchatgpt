@@ -95,17 +95,21 @@ Your reply must only contain notes following this syntax, and no other text.
         sentences = embedder.retrieve_sentences(query, self.memory_file, max_notes)
 
         notes_message = "Relevant sentences you remember:"
+        num_notes_found = 0
         for note in sentences:
-            if len(note) > 500:
+            if any(note[0] in m["content"] for m in messages):
                 continue
             notes_message += f"\n{note[0]}"
+            num_notes_found += 1
+            if num_notes_found >= max_notes:
+                break
 
         return notes_message
     
     def last_message_index(self, messages=None):
         if messages is None:
             messages = self.messages
-        index = -min([len(messages), 20])
+        index = -min([len(messages), 15])
         while num_tokens_from_messages(messages[index:]) > self.max_tokens:
             index=index+1
         if index > -self.min_messages:
@@ -202,11 +206,12 @@ Your reply must only contain notes following this syntax, and no other text.
             print("no such function")
             result = "no such function"
             system_note = None
+        
 
         messages = self.new_messages()
         messages.append({"role": "function", "name": function_name, "content": result})
         messages = self.messages_to_send(messages)
-        print(f"sending {len(new_messages)} messages with {num_tokens_from_messages(new_messages)} tokens")
+        print(result)
         result = openai.ChatCompletion.create(
             model=self.model,
             messages=messages

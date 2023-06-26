@@ -16,7 +16,7 @@ def encode_sentences(text):
     for line in text.split("\n"):
         if line:
             _sentences = nltk.sent_tokenize(line)
-            _sentences = [_s.strip() for _s in _sentences if len(_s) < 500]
+            _sentences = [_s.strip() for _s in _sentences if len(_s) < 500 and len(_s) > 50]
             _embeddings = model.encode(_sentences)
             if _embeddings is None or _embeddings.ndim < 2:
                 continue
