@@ -2,15 +2,22 @@ import json
 import openai
 from tokens import num_tokens_from_messages
 import os
-import numpy as np
 import functions
-import embedder
 from Levenshtein import distance
 import traceback
+
+from langchain.document_loaders import TextLoader
+from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain.text_splitter import CharacterTextSplitter
+from langchain.vectorstores import FAISS
 
 
 with open('api_key', 'r') as file1:
     openai.api_key = file1.readlines()[0].strip()
+
+os.environ['OPENAI_API_KEY'] = openai.api_key
+
+
 
 
 class LongChat():
@@ -84,22 +91,51 @@ Your reply must only contain notes following this syntax, and no other text.
         else:
             self.memory_file = self.conversation.replace(".json", "_memory.json")
 
-    def build_notes_message(self, messages, max_notes = 10):
-        if not os.path.exists(self.memory_file):
-            embedder.encode_and_save_conversation_from_file(os.path.join(self.conversations_path, self.conversation), self.memory_file)
+
+    def encode_conversation(self, max_split_len = 200):
+        texts = []
+        import re
+        for message in self.messages:
+            # split the message
+            splits = message["content"].split("\n")
+            splits = [s for s in splits if len(s) > 0]
+
+            #combine small chunks, keeping below max_split_len
+            combined_splits = []
+            current_split = ""
+            for split in splits:
+                if len(split) > 2*max_split_len:
+                    print("long split", len(split))
+                if len(current_split) + len(split) <= max_split_len:
+                    if current_split:
+                        current_split += "\n" + split
+                    else:
+                        current_split = split
+                else:
+                    if current_split:
+                        combined_splits.append(current_split)
+                    current_split = split
+            if current_split:
+                combined_splits.append(current_split)
+            texts += splits
+        self.db = FAISS.from_texts(texts, OpenAIEmbeddings())
+
+    def build_notes_message(self, messages, max_notes = 5):
+        self.encode_conversation()
 
         if len(messages) == 0:
             return None
         
         query = '\n\n'.join([m["content"] for m in messages[-4:-1]])
-        sentences = embedder.retrieve_sentences(query, self.memory_file, max_notes)
-
-        notes_message = "Relevant sentences you remember:"
+        result = self.db.similarity_search(query, k=20)
+        
+        notes_message = "Relevant parts from previous conversation you remember:"
         num_notes_found = 0
-        for note in sentences:
-            if any(note[0] in m["content"] for m in messages):
+        for page in result:
+            note = page.page_content
+            if any(note in m["content"] for m in messages):
                 continue
-            notes_message += f"\n{note[0]}"
+            notes_message += f"\n\n{note}"
             num_notes_found += 1
             if num_notes_found >= max_notes:
                 break
@@ -176,11 +212,7 @@ Your reply must only contain notes following this syntax, and no other text.
             }, outfile, indent=4)
 
     def check_summary(self):
-        if not os.path.exists(self.memory_file):
-            embedder.encode_and_save_conversation_from_file(os.path.join(self.conversations_path, self.conversation), self.memory_file)
-        else:
-            embedder.encode_and_append(self.messages[-2]["content"], self.memory_file)
-            embedder.encode_and_append(self.messages[-1]["content"], self.memory_file)
+        self.encode_conversation()
 
         if (self.messages_since_summary >= self.summarize_every) or self.first_summary:
             self.summarize_chatgpt()
