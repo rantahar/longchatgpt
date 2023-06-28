@@ -144,7 +144,7 @@ Your reply must only contain notes following this syntax, and no other text.
         print("SYSTEM MESSAGE:\n", messages[1]["content"])
         return messages
     
-    def summarize_chatgpt(self, messages=None):
+    def summarize(self, messages=None):
         print("summarizing")
         messages = self.new_messages(messages)
         messages.append({"role": "user", "content": self.summary_prompt})
@@ -183,7 +183,7 @@ Your reply must only contain notes following this syntax, and no other text.
         self.vector_memory.encode_new_messages(self.messages)
 
         if (self.messages_since_summary >= self.summarize_every) or self.first_summary:
-            self.summarize_chatgpt()
+            self.summarize()
             if not self.summary_rejected:
                 self.messages_since_summary = 0
 
