@@ -5,12 +5,7 @@ import os
 import functions
 from Levenshtein import distance
 import traceback
-import pickle
-
-from langchain.document_loaders import TextLoader
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.vectorstores import FAISS
+import embedder
 
 
 with open('api_key', 'r') as file1:
@@ -89,73 +84,18 @@ Your reply must only contain notes following this syntax, and no other text.
         if "memory_file" in content.keys():
             self.memory_file = content["memory_file"]
         else:
-            self.memory_file = self.conversation.replace(".json", "_memory.pickle")
-
-    def split_message(self, message, max_split_len = 200):
-        # split the message
-        splits = message["content"].split("\n")
-        splits = [s for s in splits if len(s) > 0]
-
-        #combine small chunks, keeping below max_split_len
-        combined_splits = []
-        current_split = ""
-        for split in splits:
-            if len(split) > 2*max_split_len:
-                print("long split", len(split))
-            if len(current_split) + len(split) <= max_split_len:
-                if current_split:
-                    current_split += "\n" + split
-                else:
-                    current_split = split
-            else:
-                if current_split:
-                    combined_splits.append(current_split)
-                current_split = split
-        if current_split:
-            combined_splits.append(current_split)
-        return combined_splits
-
-    def encode_new_messages(self):
-        try:
-            with open(self.memory_file, "rb") as file:
-                self.db = pickle.load(file)
-
-            texts = []
-            for message in self.messages[-2:]:
-                texts += self.split_message(message)
-            self.db.add_texts(texts)
-        except:
-            texts = []
-            for message in self.messages:
-                texts += self.split_message(message)
-            self.db = FAISS.from_texts(texts, OpenAIEmbeddings())
-
-        with open(self.memory_file, "wb") as file:
-            pickle.dump(self.db, file)
-
-    def encode_conversation(self):
-        try:
-            with open(self.memory_file, "rb") as file:
-                self.db = pickle.load(file)
-            print("LOADED")
-        except:
-            texts = []
-            for message in self.messages:
-                texts += self.split_message(message)
-            self.db = FAISS.from_texts(texts, OpenAIEmbeddings())
-
-            with open(self.memory_file, "wb") as file:
-                pickle.dump(self.db, file)
-
+            self.memory_file = self.conversation.replace(".json", ".pickle")
+        
+        self.vector_memory = embedder.Memory(self.memory_file, self.messages)
 
     def build_notes_message(self, messages, max_notes = 5):
-        self.encode_conversation()
+        self.vector_memory.encode_conversation(self.messages)
 
         if len(messages) == 0:
             return None
         
-        query = '\n\n'.join([m["content"] for m in messages[-4:-1]])
-        result = self.db.similarity_search(query, k=20)
+        key = '\n\n'.join([m["content"] for m in messages[-4:-1]])
+        result = self.vector_memory.query(key, k=20)
         
         notes_message = "Relevant parts from previous conversation you remember:"
         num_notes_found = 0
@@ -240,7 +180,7 @@ Your reply must only contain notes following this syntax, and no other text.
             }, outfile, indent=4)
 
     def check_summary(self):
-        self.encode_new_messages()
+        self.vector_memory.encode_new_messages(self.messages)
 
         if (self.messages_since_summary >= self.summarize_every) or self.first_summary:
             self.summarize_chatgpt()
