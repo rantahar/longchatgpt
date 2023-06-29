@@ -128,10 +128,12 @@ def new_message():
     load_config()
 
     if request.method == "POST":
+        print(request.form)
         if "new_message" in request.form:
             new_msg = request.form["new_message"]
+            disable_function_calls = request.form.get("disable-function-calls", False)
             try:
-                result = chatbot.new_message(new_msg)
+                result = chatbot.new_message(new_msg, disable_function_calls=disable_function_calls)
                 if "function_call" in result:
                     return redirect(url_for("confirm_function_call", function_call=result["function_call"]))
                 else:
