@@ -59,9 +59,13 @@
                     <form method="post" id="message_form" action="{{ url_for('new_message') }}">
                         <textarea name="new_message" class="form-control" placeholder="Type your message here" onkeydown="if(event.ctrlKey&&event.keyCode==13){event.preventDefault(); sendMessage();}"></textarea>
                         <input type="hidden" name="conversation_id" value="{{ active_conversation_id }}"/>
-                        <input type="hidden" name="conversation_id" value="{{ active_conversation_id }}"/>
                         <button id="send-button" type="submit" class="btn btn-primary" onclick="sendMessage()">Send</button>
-                        <input type="checkbox" id="disable-function-calls" name="disable-function-calls">
+                        <button id="paste-code-button" onclick="pasteCode()" class="btn btn-secondary">Paste Code</button>
+                        {% if disable_function_calls == "on" %}
+                            <input type="checkbox" id="disable-function-calls" name="disable-function-calls" checked>
+                        {% else %}
+                            <input type="checkbox" id="disable-function-calls" name="disable-function-calls">
+                        {% endif %}
                         <label for="disable-function-calls">Disable Function Calls</label>
                     </form>
                 </div>
@@ -109,6 +113,17 @@
         
             window.onload = function() {
                 window.scrollTo(0, document.body.scrollHeight);
+            }
+
+            function pasteCode() {
+              navigator.clipboard.readText()
+                .then(function(code) {
+                  var formattedCode = "```\n" + code + "\n```";
+                  document.getElementsByName("new_message")[0].value += formattedCode;
+                })
+                .catch(function(error) {
+                  console.error('Failed to read clipboard contents: ', error);
+                });
             }
         </script>
         <script>

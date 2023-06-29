@@ -103,7 +103,8 @@ def home():
         conversations=conversations,
         active_conversation_id=chatbot.conversation,
         error_in=error_in,
-        system_message=chatbot.system_message
+        system_message=chatbot.system_message,
+        disable_function_calls=chatbot.disable_functions
     )
 
 
@@ -140,8 +141,8 @@ def new_message():
                     error_in = ""
 
             except Exception as e:
-                print(e)
                 print(traceback.format_exc())
+                print(e)
                 error_in = new_msg
     return redirect(url_for("home"))
 

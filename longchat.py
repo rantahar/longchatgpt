@@ -31,7 +31,6 @@ class LongChat():
         self.conversation = conversation
         self.messages = []
         self.summary = {"role": "user", "content": "We have not started the conversation yet."}
-        self.notes =  {}
         self.first_summary = True
         self.messages_since_summary = 0
         self.summarize_every = summarize_every
@@ -154,9 +153,9 @@ class LongChat():
                 "summary": self.summary,
                 "first_summary": self.first_summary,
                 "messages": self.messages,
-                "notes": self.notes,
                 "system_message": self.system_message,
-                "messages_since_summary": self.messages_since_summary
+                "messages_since_summary": self.messages_since_summary,
+                "disable_functions": self.disable_functions
             }, outfile, indent=4)
 
     def check_summary(self):
@@ -218,16 +217,17 @@ class LongChat():
         new_messages = self.messages_to_send()
         print(f"sending {len(new_messages)} messages with {num_tokens_from_messages(new_messages)} tokens")
         try: 
-            if disable_function_calls:
+            if disable_function_calls == "on":
+                self.disable_functions = "on"
+                result = openai.ChatCompletion.create(
+                    model=self.model, messages=new_messages
+                )
+            else:
+                self.disable_functions = "off"
                 result = openai.ChatCompletion.create(
                     model=self.model, messages=new_messages,
                     functions=functions.definitions,
                     function_call="auto",
-                )
-            else:
-                print("HERE")
-                result = openai.ChatCompletion.create(
-                    model=self.model, messages=new_messages
                 )
             print(result)
         except Exception as e:
