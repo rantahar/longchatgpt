@@ -74,7 +74,7 @@ class LongChat():
         if len(messages) == 0:
             return None
         
-        key = '\n\n'.join([m["content"] for m in messages[-4:-1]])
+        key = messages[-1]["content"]
         result = self.vector_memory.query(key, k=20)
         
         notes_message = "Relevant parts from previous conversation you remember:"
@@ -209,19 +209,26 @@ class LongChat():
         self.check_summary()
         return result
     
-    def new_message(self, user_message):
+    def new_message(self, user_message, disable_function_calls=False):
         print("messages_since_summary", self.messages_since_summary, self.first_summary)
         if user_message != "":
             self.messages.append({"role": "user", "content": user_message})
             self.dump_conversation()
+
         new_messages = self.messages_to_send()
         print(f"sending {len(new_messages)} messages with {num_tokens_from_messages(new_messages)} tokens")
         try: 
-            result = openai.ChatCompletion.create(
-              model=self.model, messages=new_messages,
-              functions=functions.definitions,
-            function_call="auto",
-            )
+            if disable_function_calls:
+                result = openai.ChatCompletion.create(
+                    model=self.model, messages=new_messages,
+                    functions=functions.definitions,
+                    function_call="auto",
+                )
+            else:
+                print("HERE")
+                result = openai.ChatCompletion.create(
+                    model=self.model, messages=new_messages
+                )
             print(result)
         except Exception as e:
             self.messages.pop()
