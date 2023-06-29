@@ -1,6 +1,6 @@
 import json
 import openai
-from tokens import num_tokens_from_messages
+from tokens import num_tokens_from_messages, count_tokens
 import os
 import functions
 from Levenshtein import distance
@@ -67,7 +67,7 @@ class LongChat():
         
         self.vector_memory = embedder.Memory(self.memory_file, self.messages)
 
-    def build_notes_message(self, messages, max_notes = 5):
+    def build_notes_message(self, messages, max_tokens = 400):
         self.vector_memory.encode_conversation(self.messages)
 
         if len(messages) == 0:
@@ -77,14 +77,12 @@ class LongChat():
         result = self.vector_memory.query(key, k=20)
         
         notes_message = "Relevant parts from previous conversation you remember:"
-        num_notes_found = 0
         for page in result:
             note = page.page_content
             if any(note in m["content"] for m in messages):
                 continue
             notes_message += f"\n\n{note}"
-            num_notes_found += 1
-            if num_notes_found >= max_notes:
+            if count_tokens(notes_message) >= max_tokens:
                 break
 
         return notes_message
