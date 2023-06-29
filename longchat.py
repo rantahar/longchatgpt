@@ -45,16 +45,6 @@ class LongChat():
 - When you generate code, you will be careful to not plagiarize any existing code.
 """
         self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance."""
-        self.note_prompt = """Extract short, useful notes from the summary above. Provide at most 3 notes. The notes should help you (chatGPT) remember the conversation, so don't store information chatGPT already knows.
-
-Each note must follow the format:
-keyword list : note message : note importance (0-1)
-
-For example:
-chatbot, assistant, AI: You are a helpful AI assistant. : 0.1
-
-Your reply must only contain notes following this syntax, and no other text.
-"""
         self.max_summary_length = max_summary_length
         self.max_tokens = max_tokens
         self.min_messages = min_messages
@@ -67,24 +57,14 @@ Your reply must only contain notes following this syntax, and no other text.
         self.messages_file = os.path.join(self.conversations_path, conversation)
         with open(self.messages_file, 'r') as f:
             content = json.load(f)
-        if "messages" in content.keys():
-            self.messages = content["messages"]
-        if "summary" in content.keys():
-            self.summary = content["summary"]
-        if "first_summary" in content.keys():
-            self.first_summary = content["first_summary"]
-        if "notes" in content.keys():
-            self.notes = content["notes"]
-        if "system_message" in content:
-            self.system_message = content["system_message"]
-        if "messages_since_summary" in content:
-            self.messages_since_summary = content["messages_since_summary"]
-        else:
-            self.messages_since_summary = 0
-        if "memory_file" in content.keys():
-            self.memory_file = content["memory_file"]
-        else:
-            self.memory_file = self.conversation.replace(".json", ".pickle")
+
+        self.messages = content.get("messages", [])
+        self.summary = content.get("summary", {"role": "user", "content": "We have not started the conversation yet."})
+        self.first_summary = content.get("first_summary", True)
+        self.system_message = content.get("system_message", self.system_message)
+        self.messages_since_summary = content.get("messages_since_summary", 0)
+        self.disable_functions = content.get("disable_functions", False)
+        self.memory_file = content.get("memory_file", self.conversation.replace(".json", ".pickle"))
         
         self.vector_memory = embedder.Memory(self.memory_file, self.messages)
 
