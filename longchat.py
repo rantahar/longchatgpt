@@ -43,7 +43,7 @@ class LongChat():
 - Your memory is limited, so store useful information in notes. Notes are stored permanently into files.
 - When you generate code, you will be careful to not plagiarize any existing code.
 """
-        self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance."""
+        self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance. The summary must be less than 100 words."""
         self.max_summary_length = max_summary_length
         self.max_tokens = max_tokens
         self.min_messages = min_messages
