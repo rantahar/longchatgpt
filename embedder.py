@@ -78,6 +78,19 @@ class Memory():
                 with open(self.memory_file, "wb") as file:
                     pickle.dump(self.db, file)
 
+    def encode_text_file(self, text_file):
+        with open(self.memory_file, "rb") as file:
+            self.db = pickle.load(file)
+
+        with open(text_file, "r") as file:
+            texts = self.split_message({"content": file.read()})
+        self.db.add_texts(texts)
+
+        with open(self.memory_file, "wb") as file:
+            pickle.dump(self.db, file)
+
     def query(self, key, k=20):
         return self.db.similarity_search(key, k=k)
+
+
 

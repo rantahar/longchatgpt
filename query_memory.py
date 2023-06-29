@@ -11,10 +11,12 @@ os.environ['OPENAI_API_KEY'] = openai.api_key
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("Usage: python append_file_to_memory.py <input_file> <memory_file>")
+        print("Usage: python append_file_to_memory.py <query> <memory_file>")
     else:
-        input_file = sys.argv[1]
+        query = sys.argv[1]
         memory_file = sys.argv[2]
         vector_memory = embedder.Memory(memory_file, [])
-        vector_memory.encode_text_file(input_file)
+
+        for d in vector_memory.query(query, k=20):
+            print(d.page_content, "\n")
 
