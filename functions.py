@@ -3,6 +3,10 @@ import re
 
 project_folder = ".."
 
+def calculate(eval_string):
+    result = eval(eval_string)
+    return result, """success"""
+
 def read_code_file(file_path):
     with open(file_path, 'r') as file:
         code = file.read()
@@ -58,10 +62,24 @@ definitions = [
                 }
             }
         }
+    },
+    {
+        "name": "calculate",
+        "description": "Do numerical calculation. For example providing '2*2' would return 4.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "function_name": {
+                    "type": "string",
+                    "description": "Expression to calculate. For example '2*2'"
+                }
+            }
+        }
     }
 ]
 
 implementations = {
     "read_code_file": read_code_file,
-    "extract_function_definition": extract_function_definition
+    "extract_function_definition": extract_function_definition,
+    "calculate": calculate
 }

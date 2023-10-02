@@ -20,10 +20,11 @@ class LongChat():
         self,
         conversation = "default.json",
         max_summary_length = 120,
-        model = "gpt-3.5-turbo-0613",
+        model = "gpt-3.5-turbo",
+        #model = "gpt-3.5-turbo-16k",
         summarize_every = 5,
         summary_similarity_threshold = 0.2,
-        max_tokens = 2000,
+        max_tokens = 3000,
         min_messages = 6,
         conversations_path = "conversations/"
     ):
@@ -67,7 +68,7 @@ class LongChat():
         
         self.vector_memory = embedder.Memory(self.memory_file, self.messages)
 
-    def build_notes_message(self, messages, max_tokens = 400):
+    def build_notes_message(self, messages, max_tokens = 50):
         self.vector_memory.encode_conversation(self.messages)
 
         if len(messages) == 0:
@@ -76,7 +77,7 @@ class LongChat():
         key = messages[-1]["content"]
         result = self.vector_memory.query(key, k=20)
         
-        notes_message = "Relevant parts from previous conversation you remember:"
+        notes_message = "Parts from previous conversation you remember:"
         for page in result:
             note = page.page_content
             if any(note in m["content"] for m in messages):
@@ -90,12 +91,12 @@ class LongChat():
     def last_message_index(self, messages=None):
         if messages is None:
             messages = self.messages
-        index = -min([len(messages), 15])
+        index = -min([len(messages), 200])
         while num_tokens_from_messages(messages[index:]) > self.max_tokens:
             index=index+1
         if index > -self.min_messages:
             index = -self.min_messages
-        print(f"{-index} messages with {num_tokens_from_messages(messages[index:])} tokens")
+        print(f"{-index} messages with {num_tokens_from_messages(messages[index:])} tokens (max {self.max_tokens})")
         return index
 
     def old_messages(self):
@@ -112,13 +113,16 @@ class LongChat():
         short.insert(0, {"role": "system", "content": summary})
         short.insert(0, {"role": "system", "content": self.system_message})
         return short
+
+    def add_message(self, role, message_content):
+        self.messages.append({"role": role, "content": message_content})
+        notes = self.build_notes_message(self.new_messages())
+        self.messages.append({"role": "system", "content": notes})
+        self.dump_conversation()
     
     def messages_to_send(self, messages=None):
         """ Get messages and include notes in the system message """
         messages = self.new_messages(messages)
-        notes = self.build_notes_message(messages)
-        messages[1]["content"] += "\n\n" + notes
-        print("SYSTEM MESSAGE:\n", messages[1]["content"])
         return messages
     
     def summarize(self, messages=None):
@@ -198,7 +202,8 @@ class LongChat():
             self.messages.append({"role": "system", "content": system_note})
         
         message = result.choices[0].message.content
-        self.messages.append({"role": "assistant", "content": message})
+        self.add_message("assistant", message)
+        #self.messages.append({"role": "assistant", "content": message})
 
         self.messages_since_summary += 1
         self.dump_conversation()
@@ -209,12 +214,11 @@ class LongChat():
     def new_message(self, user_message, disable_function_calls=False):
         print("messages_since_summary", self.messages_since_summary, self.first_summary)
         if user_message != "":
-            self.messages.append({"role": "user", "content": user_message})
-            self.dump_conversation()
+            self.add_message("user", user_message)
 
         new_messages = self.messages_to_send()
         print(f"sending {len(new_messages)} messages with {num_tokens_from_messages(new_messages)} tokens")
-        try: 
+        try:
             if disable_function_calls == "on":
                 self.disable_functions = "on"
                 result = openai.ChatCompletion.create(
@@ -238,7 +242,8 @@ class LongChat():
             return message
         
         message = result.choices[0].message.content
-        self.messages.append({"role": "assistant", "content": message})
+        self.add_message("assistant", message)
+        #self.messages.append({"role": "assistant", "content": message})
         
         self.messages_since_summary += 1
         self.dump_conversation()
