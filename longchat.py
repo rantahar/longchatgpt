@@ -82,6 +82,8 @@ class LongChat():
             note = page.page_content
             if any(note in m["content"] for m in messages):
                 continue
+            if note in notes_message:
+                continue
             notes_message += f"\n\n{note}"
             if count_tokens(notes_message) >= max_tokens:
                 break
