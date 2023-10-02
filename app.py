@@ -129,21 +129,30 @@ def new_message():
     load_config()
 
     if request.method == "POST":
-        print(request.form)
         if "new_message" in request.form:
             new_msg = request.form["new_message"]
-            disable_function_calls = request.form.get("disable-function-calls", False)
-            try:
-                result = chatbot.new_message(new_msg, disable_function_calls=disable_function_calls)
-                if "function_call" in result:
-                    return redirect(url_for("confirm_function_call", function_call=result["function_call"]))
-                else:
-                    error_in = ""
+            chatbot.post_user_message(new_msg)
+    return redirect(url_for("home"))
 
-            except Exception as e:
-                print(traceback.format_exc())
-                print(e)
-                error_in = new_msg
+
+@app.route("/request_ai_message", methods=["POST"])
+def request_ai_message():
+    global error_in
+    load_config()
+
+    if request.method == "POST":
+        print(request.form)
+        disable_function_calls = request.form.get("disable-function-calls", False)
+        try:
+            result = chatbot.request_ai_message(disable_function_calls=disable_function_calls)
+            if "function_call" in result:
+                return redirect(url_for("confirm_function_call", function_call=result["function_call"]))
+            else:
+                error_in = ""
+
+        except Exception as e:
+            print(traceback.format_exc())
+            print(e)
     return redirect(url_for("home"))
 
 

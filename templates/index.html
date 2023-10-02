@@ -59,8 +59,11 @@
                     <form method="post" id="message_form" action="{{ url_for('new_message') }}">
                         <textarea name="new_message" id="new_message" class="form-control" rows="5" placeholder="Type your message here" onkeydown="if(event.ctrlKey&&event.keyCode==13){event.preventDefault(); sendMessage();}"></textarea>
                         <input type="hidden" name="conversation_id" value="{{ active_conversation_id }}"/>
-                        <button id="send-button" type="submit" class="btn btn-primary" onclick="sendMessage()">Send</button>
+                        <button id="send_button" type="submit" class="btn btn-primary" onclick="sendMessage()">Post</button>
                         <button id="paste-code-button"  type="button" onclick="pasteCode()" class="btn btn-secondary">Paste Code</button>
+                    </form>
+                    <form method="post" id="request_form" action="{{ url_for('request_ai_message') }}">
+                        <button id="request_button" type="submit" class="btn btn-primary" onclick="requestMessage()">Request Reply</button>
                         {% if disable_function_calls == "on" %}
                             <input type="checkbox" id="disable-function-calls" name="disable-function-calls" checked>
                         {% else %}
@@ -95,11 +98,11 @@
             </div>
         </div>
 
-        <script>$(document).ready(function(){ $("form").submit(function(){ $("#send-button").attr("disabled", true); $("#send-button").css("opacity", "0.5"); $('#loading-spinner').show(); }); });</script>
+        <script>$(document).ready(function(){ $("form").submit(function(){ $("#request_button").attr("disabled", true); $("#request_button").css("opacity", "0.5"); $('#loading-spinner').show(); }); });</script>
         <script>
             function sendMessage() {
                 // disable send button to prevent sending same message twice             
-                var btn = document.getElementById("send-button");
+                var btn = document.getElementById("send_button");
                 if(btn.disabled) {
                     return;
                 }
@@ -108,6 +111,20 @@
 
                 // submit the form
                 var form = document.getElementById('message_form');
+                form.submit();
+            }
+
+            function requestMessage() {
+                // disable send button to prevent sending same message twice             
+                var btn = document.getElementById("request_button");
+                if(btn.disabled) {
+                    return;
+                }
+                btn.disabled = true;
+                btn.style.opacity = 0.5;
+
+                // submit the form
+                var form = document.getElementById('request_form');
                 form.submit();
             }
         

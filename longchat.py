@@ -68,7 +68,7 @@ class LongChat():
         
         self.vector_memory = embedder.Memory(self.memory_file, self.messages)
 
-    def build_notes_message(self, messages, max_tokens = 50):
+    def build_notes_message(self, messages, max_tokens = 30):
         self.vector_memory.encode_conversation(self.messages)
 
         if len(messages) == 0:
@@ -211,10 +211,12 @@ class LongChat():
         self.check_summary()
         return result
     
-    def new_message(self, user_message, disable_function_calls=False):
-        print("messages_since_summary", self.messages_since_summary, self.first_summary)
+    def post_user_message(self, user_message):
         if user_message != "":
             self.add_message("user", user_message)
+    
+    def request_ai_message(self, disable_function_calls=False):
+        print("messages_since_summary", self.messages_since_summary, self.first_summary)
 
         new_messages = self.messages_to_send()
         print(f"sending {len(new_messages)} messages with {num_tokens_from_messages(new_messages)} tokens")
@@ -243,7 +245,6 @@ class LongChat():
         
         message = result.choices[0].message.content
         self.add_message("assistant", message)
-        #self.messages.append({"role": "assistant", "content": message})
         
         self.messages_since_summary += 1
         self.dump_conversation()
