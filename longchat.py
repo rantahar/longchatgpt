@@ -19,12 +19,14 @@ class LongChat():
     def __init__(
         self,
         conversation = "default.json",
-        max_summary_length = 120,
+        #model = "gpt-4",
         model = "gpt-3.5-turbo",
         #model = "gpt-3.5-turbo-16k",
         summarize_every = 5,
         summary_similarity_threshold = 0.2,
-        max_tokens = 3000,
+        content_tokens = 2000,
+        memory_tokens = 500,
+        summary_tokens = 120,
         min_messages = 6,
         conversations_path = "conversations/"
     ):
@@ -45,8 +47,9 @@ class LongChat():
 - When you generate code, you will be careful to not plagiarize any existing code.
 """
         self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance. The summary must be less than 100 words."""
-        self.max_summary_length = max_summary_length
-        self.max_tokens = max_tokens
+        self.summary_tokens = summary_tokens
+        self.content_tokens = content_tokens
+        self.memory_tokens = memory_tokens
         self.min_messages = min_messages
 
         self.read_conversation(conversation)
@@ -68,7 +71,7 @@ class LongChat():
         
         self.vector_memory = embedder.Memory(self.memory_file, self.messages)
 
-    def build_notes_message(self, messages, max_tokens = 30):
+    def build_notes_message(self, messages):
         self.vector_memory.encode_conversation(self.messages)
 
         if len(messages) == 0:
@@ -76,16 +79,20 @@ class LongChat():
         
         key = messages[-1]["content"]
         result = self.vector_memory.query(key, k=20)
+        print(result)
         
         notes_message = "Parts from previous conversation you remember:"
+        print(count_tokens(notes_message))
         for page in result:
             note = page.page_content
+            print(note)
             if any(note in m["content"] for m in messages):
                 continue
             if note in notes_message:
                 continue
             notes_message += f"\n\n{note}"
-            if count_tokens(notes_message) >= max_tokens:
+            print(count_tokens(notes_message))
+            if count_tokens(notes_message) >= self.memory_tokens:
                 break
 
         return notes_message
@@ -94,11 +101,11 @@ class LongChat():
         if messages is None:
             messages = self.messages
         index = -min([len(messages), 200])
-        while num_tokens_from_messages(messages[index:]) > self.max_tokens:
+        while num_tokens_from_messages(messages[index:]) > self.content_tokens:
             index=index+1
         if index > -self.min_messages:
             index = -self.min_messages
-        print(f"{-index} messages with {num_tokens_from_messages(messages[index:])} tokens (max {self.max_tokens})")
+        print(f"{-index} messages with {num_tokens_from_messages(messages[index:])} tokens (max {self.content_tokens})")
         return index
 
     def old_messages(self):
@@ -110,16 +117,18 @@ class LongChat():
             messages = self.messages
         index = self.last_message_index(messages)
         short = messages[index:]
-
+        
         summary = f"This is a summary you wrote for yourself: {self.summary['content']}"
+        notes = self.build_notes_message(short)
+        short.insert(0, {"role": "system", "content": notes})
         short.insert(0, {"role": "system", "content": summary})
         short.insert(0, {"role": "system", "content": self.system_message})
         return short
 
     def add_message(self, role, message_content):
         self.messages.append({"role": role, "content": message_content})
-        notes = self.build_notes_message(self.new_messages())
-        self.messages.append({"role": "system", "content": notes})
+        #notes = self.build_notes_message(self.new_messages())
+        #self.messages.append({"role": "system", "content": notes})
         self.dump_conversation()
     
     def messages_to_send(self, messages=None):
