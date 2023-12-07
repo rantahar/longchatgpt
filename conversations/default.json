@@ -4,7 +4,9 @@
         "content": "We have not started the conversation yet."
     },
     "messages": [
+        
     ],
-    "notes":[
-    ]
+    "system_message": "You are a helpful AI assistant. You will use notes and the summary to maintain a coherent conversation and offer helpful advice.\r\n\r\n- When you generate code, you will be careful to not plagiarize any existing code.\r\n",
+    "messages_since_summary": 1,
+    "disable_functions": "off"
 }
