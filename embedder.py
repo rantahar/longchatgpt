@@ -50,10 +50,10 @@ class Memory():
 
         return combined_splits
     
-    def split_message(self, message, max_split_len = 100, separator="\n"):
+    def split_message(self, message, max_split_len = 100, separator="\n\n"):
         return self.split_text(message["content"], max_split_len, separator)
     
-    def encode_new_messages(self, messages, N=2):
+    def encode_new_messages(self, messages, N=1):
         try:
             # If the pickled database is found, 
             with open(self.memory_file, "rb") as file:

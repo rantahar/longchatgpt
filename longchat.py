@@ -19,15 +19,17 @@ class LongChat():
     def __init__(
         self,
         conversation = "default.json",
+        model = "gpt-4-1106-preview",
         #model = "gpt-4",
-        model = "gpt-3.5-turbo",
+        #model = "gpt-3.5-turbo",
         #model = "gpt-3.5-turbo-16k",
         summarize_every = 5,
         summary_similarity_threshold = 0.2,
         content_tokens = 2000,
-        memory_tokens = 500,
-        summary_tokens = 120,
-        min_messages = 6,
+        memory_tokens = 400,
+        summary_tokens = 200,
+        reply_tokens = 1000,
+        min_messages = 2,
         conversations_path = "conversations/"
     ):
         self.conversations_path = conversations_path
@@ -50,6 +52,7 @@ class LongChat():
         self.summary_tokens = summary_tokens
         self.content_tokens = content_tokens
         self.memory_tokens = memory_tokens
+        self.reply_tokens = reply_tokens
         self.min_messages = min_messages
 
         self.read_conversation(conversation)
@@ -79,19 +82,15 @@ class LongChat():
         
         key = messages[-1]["content"]
         result = self.vector_memory.query(key, k=20)
-        print(result)
         
         notes_message = "Parts from previous conversation you remember:"
-        print(count_tokens(notes_message))
         for page in result:
             note = page.page_content
-            print(note)
             if any(note in m["content"] for m in messages):
                 continue
             if note in notes_message:
                 continue
             notes_message += f"\n\n{note}"
-            print(count_tokens(notes_message))
             if count_tokens(notes_message) >= self.memory_tokens:
                 break
 
@@ -120,7 +119,8 @@ class LongChat():
         
         summary = f"This is a summary you wrote for yourself: {self.summary['content']}"
         notes = self.build_notes_message(short)
-        short.insert(0, {"role": "system", "content": notes})
+        if notes:
+            short.insert(0, {"role": "system", "content": notes})
         short.insert(0, {"role": "system", "content": summary})
         short.insert(0, {"role": "system", "content": self.system_message})
         return short
@@ -129,6 +129,7 @@ class LongChat():
         self.messages.append({"role": role, "content": message_content})
         #notes = self.build_notes_message(self.new_messages())
         #self.messages.append({"role": "system", "content": notes})
+        self.vector_memory.encode_new_messages(self.messages)
         self.dump_conversation()
     
     def messages_to_send(self, messages=None):
@@ -172,8 +173,6 @@ class LongChat():
             }, outfile, indent=4)
 
     def check_summary(self):
-        self.vector_memory.encode_new_messages(self.messages)
-
         if (self.messages_since_summary >= self.summarize_every) or self.first_summary:
             self.summarize()
             if not self.summary_rejected:
@@ -235,12 +234,14 @@ class LongChat():
             if disable_function_calls == "on":
                 self.disable_functions = "on"
                 result = openai.ChatCompletion.create(
-                    model=self.model, messages=new_messages
+                    model=self.model, messages=new_messages,
+                    max_tokens = self.reply_tokens,
                 )
             else:
                 self.disable_functions = "off"
                 result = openai.ChatCompletion.create(
                     model=self.model, messages=new_messages,
+                    max_tokens = self.reply_tokens,
                     functions=functions.definitions,
                     function_call="auto",
                 )
