@@ -8,3 +8,4 @@ markdown
 sentence_transformers
 tqdm
 langchain
+langchain-community

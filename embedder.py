@@ -1,5 +1,5 @@
 import pickle
-from langchain.embeddings import HuggingFaceEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.vectorstores import FAISS
 
 from tokens import count_tokens
@@ -55,7 +55,7 @@ class Memory():
     
     def encode_new_messages(self, messages, N=1):
         try:
-            # If the pickled database is found, 
+            # If the pickled database is found
             with open(self.memory_file, "rb") as file:
                 self.db = pickle.load(file)
 
@@ -76,10 +76,11 @@ class Memory():
             print("LOADED")
         except:
             if messages:
-                texts = []
+                texts = [" "]
                 for message in messages:
                     texts += self.split_message(message)
                 hf = HuggingFaceEmbeddings()
+                print(texts)
                 self.db = FAISS.from_texts(texts, hf)
 
                 with open(self.memory_file, "wb") as file:

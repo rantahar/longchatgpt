@@ -124,7 +124,8 @@ class LongChat():
 
     def add_message(self, role, message_content):
         self.messages.append({"role": role, "content": message_content})
-        self.vector_memory.encode_new_messages(self.messages)
+        if self.messages:
+            self.vector_memory.encode_new_messages(self.messages)
         self.dump_conversation()
     
     def messages_to_send(self, messages=None):
