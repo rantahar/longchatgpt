@@ -1,14 +1,7 @@
 import sys
-import os
-import openai
 import embedder
 import PyPDF2
 import tqdm
-
-with open('api_key', 'r') as file1:
-    openai.api_key = file1.readlines()[0].strip()
-
-os.environ['OPENAI_API_KEY'] = openai.api_key
 
 
 def extract_text_from_pdf(file_path):

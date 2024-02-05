@@ -1,5 +1,5 @@
 import json
-import openai
+from openai import OpenAI
 from tokens import num_tokens_from_messages, count_tokens
 import os
 import functions
@@ -9,10 +9,7 @@ import embedder
 
 
 with open('api_key', 'r') as file1:
-    openai.api_key = file1.readlines()[0].strip()
-
-os.environ['OPENAI_API_KEY'] = openai.api_key
-
+    client = OpenAI(api_key=file1.readlines()[0].strip())
 
 
 class LongChat():
@@ -127,8 +124,6 @@ class LongChat():
 
     def add_message(self, role, message_content):
         self.messages.append({"role": role, "content": message_content})
-        #notes = self.build_notes_message(self.new_messages())
-        #self.messages.append({"role": "system", "content": notes})
         self.vector_memory.encode_new_messages(self.messages)
         self.dump_conversation()
     
@@ -141,9 +136,7 @@ class LongChat():
         print("summarizing")
         messages = self.new_messages(messages)
         messages.append({"role": "user", "content": self.summary_prompt})
-        summary = openai.ChatCompletion.create(
-          model=self.model, messages=messages
-        ).choices[0].message.content
+        summary = client.chat.completions.create(model=self.model, messages=messages).choices[0].message.content
         
         if self.first_summary:
             self.summary = {"role": "assistant", "content": summary}
@@ -183,7 +176,7 @@ class LongChat():
     def handle_function_call(self, function_call):
         print("function call message:", function_call)
         function_name = function_call["name"]
-        parameters = function_call.get("arguments", "{}")
+        parameters = function_call.arguments
         if function_name in functions.implementations:
             function = functions.implementations[function_name]
             try:
@@ -202,18 +195,13 @@ class LongChat():
         messages = self.new_messages()
         messages.append({"role": "function", "name": function_name, "content": result})
         messages = self.messages_to_send(messages)
-        print(result)
-        result = openai.ChatCompletion.create(
-            model=self.model,
-            messages=messages
-        )
-        print(result)
+        result = client.chat.completions.create(model=self.model,
+        messages=messages)
         if system_note:
             self.messages.append({"role": "system", "content": system_note})
         
         message = result.choices[0].message.content
         self.add_message("assistant", message)
-        #self.messages.append({"role": "assistant", "content": message})
 
         self.messages_since_summary += 1
         self.dump_conversation()
@@ -233,18 +221,14 @@ class LongChat():
         try:
             if disable_function_calls == "on":
                 self.disable_functions = "on"
-                result = openai.ChatCompletion.create(
-                    model=self.model, messages=new_messages,
-                    max_tokens = self.reply_tokens,
-                )
+                result = client.chat.completions.create(model=self.model, messages=new_messages,
+                max_tokens = self.reply_tokens)
             else:
                 self.disable_functions = "off"
-                result = openai.ChatCompletion.create(
-                    model=self.model, messages=new_messages,
-                    max_tokens = self.reply_tokens,
-                    functions=functions.definitions,
-                    function_call="auto",
-                )
+                result = client.chat.completions.create(model=self.model, messages=new_messages,
+                max_tokens = self.reply_tokens,
+                functions=functions.definitions,
+                function_call="auto")
             print(result)
         except Exception as e:
             self.messages.pop()
@@ -252,7 +236,7 @@ class LongChat():
         
 
         message = result.choices[0].message
-        while message.get("function_call"):
+        while message.tool_calls:
             return message
         
         message = result.choices[0].message.content

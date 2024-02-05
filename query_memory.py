@@ -1,12 +1,5 @@
 import sys
-import os
-import openai
 import embedder
-
-with open('api_key', 'r') as file1:
-    openai.api_key = file1.readlines()[0].strip()
-
-os.environ['OPENAI_API_KEY'] = openai.api_key
 
 
 if __name__ == "__main__":
