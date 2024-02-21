@@ -145,8 +145,8 @@ def request_ai_message():
         disable_function_calls = request.form.get("disable-function-calls", False)
         try:
             result = chatbot.request_ai_message(disable_function_calls=disable_function_calls)
-            if result.tool_calls:
-                return redirect(url_for("confirm_function_call", function_call=result.tool_calls))
+            if "tool_calls" in result:
+                return redirect(url_for("confirm_function_call", function_call=result["tool_calls"]))
             else:
                 error_in = ""
 

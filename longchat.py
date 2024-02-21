@@ -16,16 +16,13 @@ class LongChat():
     def __init__(
         self,
         conversation = "default.json",
-        model = "gpt-4-1106-preview",
-        #model = "gpt-4",
-        #model = "gpt-3.5-turbo",
-        #model = "gpt-3.5-turbo-16k",
+        model = "gpt-4-turbo-preview",
         summarize_every = 5,
         summary_similarity_threshold = 0.2,
-        content_tokens = 2000,
-        memory_tokens = 400,
-        summary_tokens = 200,
-        reply_tokens = 1000,
+        content_tokens = 8000,
+        memory_tokens = 1000,
+        summary_tokens = 300,
+        reply_tokens = 4000,
         min_messages = 2,
         conversations_path = "conversations/"
     ):

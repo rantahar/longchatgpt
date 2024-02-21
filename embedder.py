@@ -1,6 +1,6 @@
 import pickle
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 
 from tokens import count_tokens
 
