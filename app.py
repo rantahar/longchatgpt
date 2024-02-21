@@ -67,8 +67,13 @@ def save_config():
 
 
 def load_config():
-    with open("config.json", 'r') as infile:
-        config = json.load(infile)
+    try:
+        with open("config.json", 'r') as infile:
+            config = json.load(infile)
+    except:
+        config = {
+            "conversation": "default"
+        }
     chatbot.read_conversation(config["conversation"])
 
 
