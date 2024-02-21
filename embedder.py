@@ -57,23 +57,22 @@ class Memory():
         try:
             # If the pickled database is found
             with open(self.memory_file, "rb") as file:
-                self.db = pickle.load(file)
+                db = pickle.load(file)
 
             texts = []
             for message in messages[-N:]:
                 texts += self.split_message(message)
-            self.db.add_texts(texts)
+            db.add_texts(texts)
+            with open(self.memory_file, "wb") as file:
+                pickle.dump(db, file)
         except:
             self.encode_conversation(messages)
 
-        with open(self.memory_file, "wb") as file:
-            pickle.dump(self.db, file)
 
     def encode_conversation(self, messages):
         try:
             with open(self.memory_file, "rb") as file:
-                self.db = pickle.load(file)
-            print("LOADED")
+                db = pickle.load(file)
         except:
             if messages:
                 texts = [" "]
@@ -81,37 +80,41 @@ class Memory():
                     texts += self.split_message(message)
                 hf = HuggingFaceEmbeddings()
                 print(texts)
-                self.db = FAISS.from_texts(texts, hf)
+                db = FAISS.from_texts(texts, hf)
 
                 with open(self.memory_file, "wb") as file:
-                    pickle.dump(self.db, file)
+                    pickle.dump(db, file)
 
     def encode_texts(self, texts):
         with open(self.memory_file, "rb") as file:
-            self.db = pickle.load(file)
+            db = pickle.load(file)
 
-        self.db.add_texts(texts)
+        db.add_texts(texts)
 
         with open(self.memory_file, "wb") as file:
-            pickle.dump(self.db, file)
+            pickle.dump(db, file)
 
     def encode_text(self, text):
         with open(self.memory_file, "rb") as file:
-            self.db = pickle.load(file)
+            db = pickle.load(file)
 
         texts = self.split_message({"content": text})
-        self.db.add_texts(texts)
+        db.add_texts(texts)
 
         with open(self.memory_file, "wb") as file:
-            pickle.dump(self.db, file)
+            pickle.dump(db, file)
 
     def encode_text_file(self, text_file):
         with open(text_file, "r") as file:
             text = file.read()
+
         self.encode_text(text)
 
     def query(self, key, k=20):
-        return self.db.similarity_search(key, k=k)
+        with open(self.memory_file, "rb") as file:
+            db = pickle.load(file)
+            
+        return db.similarity_search(key, k=k)
 
 
 
