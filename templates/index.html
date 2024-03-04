@@ -33,11 +33,8 @@
                 <div class="col-9">
                     {% for message in messages %}
                     
-                    {% if message.is_summary %}
+                    {% if message.role == "system" %}
                     <div class="message mb-2 text-lg card bg-primary text-white">
-                        <div class="card-header">
-                            Summary
-                        </div>
                         <div class="card-body">
                             <strong>{{ message.role }}</strong>
                             <p>{{ message.content | safe }}</p>

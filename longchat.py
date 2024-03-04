@@ -70,6 +70,7 @@ class Summarizer:
         self.summary_tokens = summary_tokens
         self.summarize_every = summarize_every
         self.summary_similarity_threshold = summary_similarity_threshold
+        self.summary_rejected = False
 
     def set_conversation(self, conversation):
         self.conversation = conversation
@@ -77,8 +78,8 @@ class Summarizer:
     def summarize(self, messages):
         messages.append({"role": "user", "content": self.summary_prompt})
         summary = client.chat.completions.create(model=self.model, messages=messages).choices[0].message.content
-        if self.first_summary:
-            self.first_summary = False
+        if self.conversation.first_summary:
+            self.conversation.first_summary = False
             return summary
         else:
             return self.compare_and_update_summary(self.summary, summary)
@@ -86,16 +87,22 @@ class Summarizer:
     def compare_and_update_summary(self, old_summary, new_summary):
         similarity = 1 - distance(old_summary.lower(), new_summary.lower()) / max(len(old_summary), len(new_summary))
         if similarity >= self.summary_similarity_threshold:
+            self.summary_rejected = False
+            print("ACCEPTED")
             return new_summary
         else:
+            self.summary_rejected = True
+            print("REJECTED")
             return old_summary
 
-    def check_summary(self):
+    def check_summary(self, messages):
         self.conversation.messages_since_summary += 1
         if (self.conversation.messages_since_summary >= self.summarize_every) or self.conversation.first_summary:
-            self.summarize()
+            summary = self.summarize(messages)
             if not self.summary_rejected:
-                self.messages_since_summary = 0
+                self.conversation.messages_since_summary = 0
+        self.conversation.summary["content"] = summary
+        self.conversation.save_conversation()
 
 
 
@@ -169,7 +176,7 @@ class LongChat():
         self,
         conversation = "default.json",
         model = "gpt-4-turbo-preview",
-        summarize_every = 5,
+        summarize_every = 0,
         summary_similarity_threshold = 0.2,
         content_tokens = 4000,
         memory_tokens = 500,
@@ -216,12 +223,11 @@ class LongChat():
 
         result = client.chat.completions.create(model=self.model, messages=in_context_messages,
         max_tokens = self.reply_tokens)
-        print(result)
                 
         message = result.choices[0].message.content
         self.conversation.add_message(role = "assistant", content = message)
         
-        self.summarizer.check_summary()
+        self.summarizer.check_summary(self.in_context_messages())
         return {}
     
 
