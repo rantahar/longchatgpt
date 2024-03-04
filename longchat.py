@@ -187,7 +187,7 @@ class LongChat():
         self.summarize_every = summarize_every
         self.summary_rejected = False
         self.model = model
-        self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance. The summary must be less than 200 words."""
+        self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you, and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance. The summary must be less than 200 words."""
         self.reply_tokens = reply_tokens
         self.conversations_path = conversations_path
 
