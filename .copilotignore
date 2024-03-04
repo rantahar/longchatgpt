@@ -2,4 +2,3 @@ conversations/*.json
 memory/*.pickle
 api_key
 *.pyc
-config.json

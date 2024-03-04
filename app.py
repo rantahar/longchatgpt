@@ -108,8 +108,7 @@ def home():
         conversations=conversations,
         active_conversation_id=chatbot.conversation,
         error_in=error_in,
-        system_message=chatbot.system_message,
-        disable_function_calls=chatbot.disable_functions
+        system_message=chatbot.conversation.system_message,
     )
 
 
@@ -147,14 +146,8 @@ def request_ai_message():
 
     if request.method == "POST":
         print(request.form)
-        disable_function_calls = request.form.get("disable-function-calls", False)
         try:
-            result = chatbot.request_ai_message(disable_function_calls=disable_function_calls)
-            if "tool_calls" in result:
-                return redirect(url_for("confirm_function_call", function_call=result["tool_calls"]))
-            else:
-                error_in = ""
-
+            chatbot.request_ai_message()
         except Exception as e:
             print(traceback.format_exc())
             print(e)
@@ -195,8 +188,8 @@ def save_system_message():
     if request.method == "POST":
         print(request.form)
         system_message = request.form["system_message"]
-        chatbot.system_message = system_message
-        chatbot.dump_conversation()
+        chatbot.conversation.system_message = system_message
+        chatbot.conversation.save_conversation()
     return redirect(url_for("home", **request.args))
 
 
