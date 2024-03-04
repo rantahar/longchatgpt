@@ -25,7 +25,9 @@ class Memory():
         current_split = ""
         for split in splits:
             if count_tokens(split) > max_split_len:
-                if separator == "\n":
+                if separator == "\n\n":
+                    new_sep = "\n"
+                elif separator == "\n":
                     new_sep = "."
                 elif separator == ".":
                     new_sep = ","
@@ -36,7 +38,7 @@ class Memory():
                 new_splits = self.split_text(split, separator=new_sep, max_split_len=max_split_len)
                 combined_splits += new_splits
                 continue
-            if count_tokens(current_split) + count_tokens(split) <= max_split_len:
+            if (separator != "\n\n") and (count_tokens(current_split) + count_tokens(split) <= max_split_len):
                 if current_split:
                     current_split += separator + split
                 else:
@@ -61,7 +63,8 @@ class Memory():
 
             texts = []
             for message in messages[-N:]:
-                texts += self.split_message(message)
+                splits = self.split_message(message)
+                texts += [f"{message['role']}: {s}" for s in splits]
             db.add_texts(texts)
             with open(self.memory_file, "wb") as file:
                 pickle.dump(db, file)
@@ -75,30 +78,32 @@ class Memory():
                 db = pickle.load(file)
         except:
             if messages:
-                texts = [" "]
+                texts = ["system: "]
                 for message in messages:
-                    texts += self.split_message(message)
+                    splits = self.split_message(message)
+                    texts += [f"{message['role']}: {s}" for s in splits]
                 hf = HuggingFaceEmbeddings()
-                print(texts)
                 db = FAISS.from_texts(texts, hf)
 
                 with open(self.memory_file, "wb") as file:
                     pickle.dump(db, file)
 
-    def encode_texts(self, texts):
+    def encode_texts(self, texts, source="text"):
         with open(self.memory_file, "rb") as file:
             db = pickle.load(file)
 
+        texts += [f"{source}: {t}" for t in texts]
         db.add_texts(texts)
 
         with open(self.memory_file, "wb") as file:
             pickle.dump(db, file)
 
-    def encode_text(self, text):
+    def encode_text(self, text, source="text"):
         with open(self.memory_file, "rb") as file:
             db = pickle.load(file)
 
-        texts = self.split_message({"content": text})
+        splits = self.split_text(text)
+        texts =  [f"{source}: {s}" for s in splits]
         db.add_texts(texts)
 
         with open(self.memory_file, "wb") as file:

@@ -93,9 +93,10 @@ class Summarizer:
             self.summary_rejected = True
             return old_summary
 
-    def check_summary(self, messages):
+    def check_summary(self, context):
         self.conversation.messages_since_summary += 1
         if (self.conversation.messages_since_summary >= self.summarize_every) or self.conversation.first_summary:
+            messages = context.in_context_messages()
             summary = self.summarize(messages)
             if not self.summary_rejected:
                 self.conversation.messages_since_summary = 0
@@ -225,7 +226,7 @@ class LongChat():
         message = result.choices[0].message.content
         self.conversation.add_message(role = "assistant", content = message)
         
-        self.summarizer.check_summary(self.in_context_messages())
+        self.summarizer.check_summary(self.context)
         return {}
     
 

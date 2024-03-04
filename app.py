@@ -78,8 +78,9 @@ def load_config():
 
 
 def get_display_messages():
-    print(f"displaying {len(chatbot.in_context_messages())} new messages")
-    in_context_messages = [dict(m, is_summary=False) for m in chatbot.in_context_messages()]
+    in_context_messages = chatbot.in_context_messages()
+    print(f"displaying {len(in_context_messages)} new messages")
+    in_context_messages = [dict(m, is_summary=False) for m in in_context_messages]
     out_of_context_messages = [dict(m, is_summary=False) for m in chatbot.out_of_context_messages()]
 
     in_context_messages[0]["is_summary"] = True
