@@ -82,17 +82,15 @@ class Summarizer:
             self.conversation.first_summary = False
             return summary
         else:
-            return self.compare_and_update_summary(self.summary, summary)
+            return self.compare_and_update_summary(self.conversation.summary["content"], summary)
     
     def compare_and_update_summary(self, old_summary, new_summary):
         similarity = 1 - distance(old_summary.lower(), new_summary.lower()) / max(len(old_summary), len(new_summary))
         if similarity >= self.summary_similarity_threshold:
             self.summary_rejected = False
-            print("ACCEPTED")
             return new_summary
         else:
             self.summary_rejected = True
-            print("REJECTED")
             return old_summary
 
     def check_summary(self, messages):
@@ -176,7 +174,7 @@ class LongChat():
         self,
         conversation = "default.json",
         model = "gpt-4-turbo-preview",
-        summarize_every = 0,
+        summarize_every = 5,
         summary_similarity_threshold = 0.2,
         content_tokens = 4000,
         memory_tokens = 500,
