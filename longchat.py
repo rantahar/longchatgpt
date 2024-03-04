@@ -118,6 +118,7 @@ class ContextWindowBuilder():
         self.vector_memory = embedder.Memory(self.conversation.memory_file, self.conversation.messages)
 
     def build_notes_message(self, messages):
+        print("building notes")
         self.vector_memory.encode_conversation(self.conversation.messages)
 
         if len(messages) == 0:
@@ -129,7 +130,8 @@ class ContextWindowBuilder():
         notes_message = "Parts from previous conversation you remember:"
         for page in result:
             note = page.page_content
-            if any(note in m["content"] for m in messages):
+            note_content = ": ".join(note.split(": ")[1:])
+            if any(note_content in m["content"] for m in messages):
                 continue
             if note in notes_message:
                 continue
@@ -137,6 +139,7 @@ class ContextWindowBuilder():
             if count_tokens(notes_message) >= self.memory_tokens:
                 break
 
+        print("notes built")
         return notes_message
 
     def last_message_index(self, messages=None):
