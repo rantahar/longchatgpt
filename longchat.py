@@ -56,41 +56,60 @@ class ConversationManager:
             }, outfile, indent=4)
 
 
-class LongChat():
+
+class Summarizer:
     def __init__(
-        self,
-        conversation = "default.json",
-        model = "gpt-4-turbo-preview",
-        summarize_every = 5,
-        summary_similarity_threshold = 0.2,
-        content_tokens = 4000,
-        memory_tokens = 500,
-        summary_tokens = 300,
-        reply_tokens = 2000,
-        min_messages = 2,
-        conversations_path = "conversations/"
-    ):
-        self.messages_since_summary = 0
+            self, model, summary_tokens, summarize_every, summary_similarity_threshold,
+            conversation,
+            summary_prompt = None
+        ):
+        self.model = model
+        if summary_prompt is None:
+            self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance. The summary must be less than 200 words."""
+        self.conversation = conversation
+        self.summary_tokens = summary_tokens
         self.summarize_every = summarize_every
         self.summary_similarity_threshold = summary_similarity_threshold
-        self.summary_rejected = False
-        self.model = model
-        self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance. The summary must be less than 200 words."""
-        self.summary_tokens = summary_tokens
+
+    def set_conversation(self, conversation):
+        self.conversation = conversation
+
+    def summarize(self, messages):
+        messages.append({"role": "user", "content": self.summary_prompt})
+        summary = client.chat.completions.create(model=self.model, messages=messages).choices[0].message.content
+        if self.first_summary:
+            self.first_summary = False
+            return summary
+        else:
+            return self.compare_and_update_summary(self.summary, summary)
+    
+    def compare_and_update_summary(self, old_summary, new_summary):
+        similarity = 1 - distance(old_summary.lower(), new_summary.lower()) / max(len(old_summary), len(new_summary))
+        if similarity >= self.summary_similarity_threshold:
+            return new_summary
+        else:
+            return old_summary
+
+    def check_summary(self):
+        self.conversation.messages_since_summary += 1
+        if (self.conversation.messages_since_summary >= self.summarize_every) or self.conversation.first_summary:
+            self.summarize()
+            if not self.summary_rejected:
+                self.messages_since_summary = 0
+
+
+
+class ContextWindowBuilder():
+    def __init__(self, conversation, content_tokens, memory_tokens, min_messages):
+        self.conversation = conversation
         self.content_tokens = content_tokens
         self.memory_tokens = memory_tokens
-        self.reply_tokens = reply_tokens
         self.min_messages = min_messages
-        self.conversations_path = conversations_path
+        self.vector_memory = None
 
-        self.conversation = ConversationManager(conversation, self.conversations_path)
-
-
-    def read_conversation(self, conversation):
-        self.conversation = ConversationManager(conversation, self.conversations_path)
-        self.memory_file = self.conversation.memory_file
-        self.vector_memory = embedder.Memory(self.memory_file, self.conversation.messages)
-        
+    def set_conversation(self, conversation):
+        self.conversation = conversation
+        self.vector_memory = embedder.Memory(self.conversation.memory_file, self.conversation.messages)
 
     def build_notes_message(self, messages):
         self.vector_memory.encode_conversation(self.conversation.messages)
@@ -113,7 +132,6 @@ class LongChat():
                 break
 
         return notes_message
-    
 
     def last_message_index(self, messages=None):
         if messages is None:
@@ -126,10 +144,8 @@ class LongChat():
         print(f"{-index} messages with {num_tokens_from_messages(messages[index:])} tokens (max {self.content_tokens})")
         return index
 
-
     def out_of_context_messages(self):
         return list(self.conversation.messages[:self.last_message_index()])
-
 
     def in_context_messages(self, messages=None):
         """ Get the latest messages that fit in the token limit """
@@ -144,36 +160,50 @@ class LongChat():
             short.insert(0, {"role": "system", "content": notes})
         short.insert(0, {"role": "system", "content": summary})
         short.insert(0, {"role": "system", "content": self.conversation.system_message})
-        return short    
-    
-
-    def summarize(self, messages=None):
-        messages = self.in_context_messages(messages)
-        messages.append({"role": "user", "content": self.summary_prompt})
-        summary = client.chat.completions.create(model=self.model, messages=messages).choices[0].message.content
-        
-        if self.conversation.first_summary:
-            self.conversation.summary = {"role": "assistant", "content": summary}
-            self.conversation.first_summary = False
-        else:
-            self.compare_and_update_summary(summary)
-    
-
-    def compare_and_update_summary(self, summary):
-        old_summary = self.conversation.summary["content"]
-        similarity = 1 - distance(old_summary.lower(), summary.lower()) / max(len(old_summary), len(summary))
-        if similarity >= self.summary_similarity_threshold:
-            self.conversation.summary = {"role": "assistant", "content": summary}
-            self.summary_rejected= False
-        else:
-            self.summary_rejected = True
+        return short
 
 
-    def check_summary(self):
-        if (self.messages_since_summary >= self.summarize_every) or self.conversation.first_summary:
-            self.summarize()
-            if not self.summary_rejected:
-                self.messages_since_summary = 0    
+
+class LongChat():
+    def __init__(
+        self,
+        conversation = "default.json",
+        model = "gpt-4-turbo-preview",
+        summarize_every = 5,
+        summary_similarity_threshold = 0.2,
+        content_tokens = 4000,
+        memory_tokens = 500,
+        summary_tokens = 300,
+        reply_tokens = 2000,
+        min_messages = 2,
+        conversations_path = "conversations/"
+    ):
+        self.messages_since_summary = 0
+        self.summarize_every = summarize_every
+        self.summary_rejected = False
+        self.model = model
+        self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance. The summary must be less than 200 words."""
+        self.reply_tokens = reply_tokens
+        self.conversations_path = conversations_path
+
+        self.conversation = ConversationManager(conversation, self.conversations_path)
+        self.summarizer = Summarizer(
+            model, summary_tokens, summarize_every, summary_similarity_threshold,
+            self.conversation
+        )
+        self.context = ContextWindowBuilder(self.conversation, content_tokens, memory_tokens, min_messages)
+
+
+    def read_conversation(self, conversation):
+        self.conversation = ConversationManager(conversation, self.conversations_path)
+        self.summarizer.set_conversation(self.conversation)
+        self.context.set_conversation(self.conversation)
+
+    def in_context_messages(self):
+        return self.context.in_context_messages()
+
+    def out_of_context_messages(self):
+        return self.context.out_of_context_messages()
 
     def post_user_message(self, user_message):
         if user_message != "":
@@ -191,8 +221,7 @@ class LongChat():
         message = result.choices[0].message.content
         self.conversation.add_message(role = "assistant", content = message)
         
-        self.messages_since_summary += 1
-        self.check_summary()
+        self.summarizer.check_summary()
         return {}
     
 
