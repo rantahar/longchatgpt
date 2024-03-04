@@ -19,8 +19,8 @@ class ConversationManager:
         self.read_conversation()
 
     def read_conversation(self):
-        messages_file = os.path.join(self.conversations_path, self.conversation)
-        with open(messages_file, 'r') as f:
+        self.messages_file = os.path.join(self.conversations_path, self.conversation)
+        with open(self.messages_file, 'r') as f:
             content = json.load(f)
 
         if "system_message" not in content:
@@ -85,6 +85,7 @@ class LongChat():
 
         self.conversation = ConversationManager(conversation, self.conversations_path)
 
+
     def read_conversation(self, conversation):
         self.conversation = ConversationManager(conversation, self.conversations_path)
         self.memory_file = self.conversation.memory_file
@@ -126,11 +127,11 @@ class LongChat():
         return index
 
 
-    def old_messages(self):
+    def out_of_context_messages(self):
         return list(self.conversation.messages[:self.last_message_index()])
 
 
-    def new_messages(self, messages=None):
+    def in_context_messages(self, messages=None):
         """ Get the latest messages that fit in the token limit """
         if messages is None:
             messages = self.conversation.messages
@@ -143,109 +144,54 @@ class LongChat():
             short.insert(0, {"role": "system", "content": notes})
         short.insert(0, {"role": "system", "content": summary})
         short.insert(0, {"role": "system", "content": self.conversation.system_message})
-        return short
+        return short    
+    
 
-    
-    def messages_to_send(self, messages=None):
-        return self.new_messages(messages)
-    
-    
     def summarize(self, messages=None):
-        print("summarizing")
-        messages = self.new_messages(messages)
+        messages = self.in_context_messages(messages)
         messages.append({"role": "user", "content": self.summary_prompt})
         summary = client.chat.completions.create(model=self.model, messages=messages).choices[0].message.content
         
-        if self.first_summary:
+        if self.conversation.first_summary:
             self.conversation.summary = {"role": "assistant", "content": summary}
-            self.first_summary = False
-            return
+            self.conversation.first_summary = False
+        else:
+            self.compare_and_update_summary(summary)
+    
 
+    def compare_and_update_summary(self, summary):
         old_summary = self.conversation.summary["content"]
         similarity = 1 - distance(old_summary.lower(), summary.lower()) / max(len(old_summary), len(summary))
         if similarity >= self.summary_similarity_threshold:
             self.conversation.summary = {"role": "assistant", "content": summary}
             self.summary_rejected= False
         else:
-            print("Divergent summary rejected", similarity)
-            print(old_summary)
-            print(summary)
             self.summary_rejected = True
 
 
     def check_summary(self):
-        if (self.messages_since_summary >= self.summarize_every) or self.first_summary:
+        if (self.messages_since_summary >= self.summarize_every) or self.conversation.first_summary:
             self.summarize()
             if not self.summary_rejected:
-                self.messages_since_summary = 0
-
-            self.dump_conversation()
-
-
-    def handle_function_call(self, function_call):
-        print("function call message:", function_call)
-        function_name = function_call["name"]
-        parameters = function_call.arguments
-        if function_name in functions.implementations:
-            function = functions.implementations[function_name]
-            try:
-                result, system_note = function(**json.loads(parameters))
-            except Exception as e:
-                print(e)
-                print("exception in function call")
-                result = "exception in function call:" +str(e)
-                system_note = None
-        else:
-            print("no such function")
-            result = "no such function"
-            system_note = None
-        
-
-        messages = self.new_messages()
-        messages.append({"role": "function", "name": function_name, "content": result})
-        messages = self.messages_to_send(messages)
-        result = client.chat.completions.create(model=self.model,
-        messages=messages)
-        if system_note:
-            self.conversation.add_message(role = "system", content= system_note)
-        
-        message = result.choices[0].message.content
-        self.add_message("assistant", message)
-
-        self.messages_since_summary += 1
-        self.dump_conversation()
-
-        self.check_summary()
-        return result
-    
+                self.messages_since_summary = 0    
 
     def post_user_message(self, user_message):
         if user_message != "":
-            self.add_message("user", user_message)
+            self.conversation.add_message(role = "user", content = user_message)
     
 
     def request_ai_message(self,):
-        print("messages_since_summary", self.messages_since_summary, self.first_summary)
+        in_context_messages = self.in_context_messages()
+        print(f"sending {len(in_context_messages)} messages with {num_tokens_from_messages(in_context_messages)} tokens")
 
-        new_messages = self.messages_to_send()
-        print(f"sending {len(new_messages)} messages with {num_tokens_from_messages(new_messages)} tokens")
-        self.disable_functions = "on"
-        result = client.chat.completions.create(model=self.model, messages=new_messages,
+        result = client.chat.completions.create(model=self.model, messages=in_context_messages,
         max_tokens = self.reply_tokens)
         print(result)
-        
-        message = result.choices[0].message
-        if message.tool_calls:
-            # Immediately return any tool call for the app to handle. The app will ask user for
-            # permission to execute the tool call.
-            return message
-        
+                
         message = result.choices[0].message.content
         self.conversation.add_message(role = "assistant", content = message)
         
         self.messages_since_summary += 1
-        self.dump_conversation()
-
         self.check_summary()
         return {}
     

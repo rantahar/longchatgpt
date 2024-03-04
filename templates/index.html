@@ -64,12 +64,6 @@
                     </form>
                     <form method="post" id="request_form" action="{{ url_for('request_ai_message') }}">
                         <button id="request_button" type="submit" class="btn btn-primary" onclick="requestMessage()">Request Reply</button>
-                        {% if disable_function_calls == "on" %}
-                            <input type="checkbox" id="disable-function-calls" name="disable-function-calls" checked>
-                        {% else %}
-                            <input type="checkbox" id="disable-function-calls" name="disable-function-calls">
-                        {% endif %}
-                        <label for="disable-function-calls">Disable Function Calls</label>
                     </form>
                 </div>
             </div>

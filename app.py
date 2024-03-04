@@ -62,7 +62,7 @@ def render_messages(messages):
 def save_config():
     with open("config.json", 'w') as outfile:
         json.dump({
-            "conversation": chatbot.conversation
+            "conversation": chatbot.conversation.conversation
         }, outfile, indent=4)
 
 
@@ -78,14 +78,14 @@ def load_config():
 
 
 def get_display_messages():
-    print(f"displaying {len(chatbot.new_messages())} new messages")
-    new_messages = [dict(m, is_summary=False) for m in chatbot.new_messages()]
-    old_messages = [dict(m, is_summary=False) for m in chatbot.old_messages()]
+    print(f"displaying {len(chatbot.in_context_messages())} new messages")
+    in_context_messages = [dict(m, is_summary=False) for m in chatbot.in_context_messages()]
+    out_of_context_messages = [dict(m, is_summary=False) for m in chatbot.out_of_context_messages()]
 
-    new_messages[0]["is_summary"] = True
-    new_messages[1]["is_summary"] = True
+    in_context_messages[0]["is_summary"] = True
+    in_context_messages[1]["is_summary"] = True
 
-    return old_messages + new_messages
+    return out_of_context_messages + in_context_messages
 
 
 error_in = ""
@@ -152,33 +152,6 @@ def request_ai_message():
             print(traceback.format_exc())
             print(e)
     return redirect(url_for("home"))
-
-
-@app.route("/confirm_function_call", methods=["GET", "POST"])
-def confirm_function_call():
-    global error_in
-
-    load_config()
-    if request.method == "POST":
-        confirmed = request.form.get("confirmed")
-        if confirmed == "yes":
-            try:
-                # Execute the function call
-                result = chatbot.handle_function_call(json.loads(request.form.get("function_call")))
-                print(result)
-                if result.tool_calls:
-                    return redirect(url_for("confirm_function_call", function_call=result.tool_calls))
-                else:
-                    error_in = ""
-                    return redirect(url_for("home"))
-            except Exception as e:
-                print(e)
-                print(traceback.format_exc())
-        else:
-            return redirect(url_for("home"))
-    
-    function_call = request.args.get("function_call")
-    return render_template("confirmation.html", function_call=function_call)
 
 
 @app.route("/save_system_message", methods=["POST"])
