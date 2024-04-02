@@ -1,7 +1,11 @@
 flask
+numpy
 openai
 pygments
 tiktoken
-numpy
 Levenshtein
 markdown
+sentence_transformers
+tqdm
+langchain
+langchain-community

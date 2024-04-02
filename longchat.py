@@ -1,155 +1,235 @@
 import json
-import openai
-from tokens import num_tokens_from_messages
+from openai import OpenAI
+from tokens import num_tokens_from_messages, count_tokens
 import os
-import numpy as np
+import functions
 from Levenshtein import distance
+import traceback
+import embedder
+
 
 with open('api_key', 'r') as file1:
-    openai.api_key = file1.readlines()[0].strip()
+    client = OpenAI(api_key=file1.readlines()[0].strip())
+
+
+class ConversationManager:
+    def __init__(self, conversation="default.json", conversations_path="conversations/"):
+        self.conversations_path = conversations_path
+        self.conversation = conversation
+        self.read_conversation()
+
+    def read_conversation(self):
+        self.messages_file = os.path.join(self.conversations_path, self.conversation)
+        with open(self.messages_file, 'r') as f:
+            content = json.load(f)
+
+        if "system_message" not in content:
+            raise ValueError("The 'system_message' key was not found in the conversation JSON file.")
+        if "summary" not in content:
+            raise ValueError("The 'summary' key was not found in the conversation JSON file.")
+
+        self.messages = content.get("messages", [])
+        self.summary = content.get("summary")
+        self.system_message = content.get("system_message")
+        self.first_summary = content.get("first_summary", True)
+        self.messages_since_summary = content.get("messages_since_summary", 0)
+
+        self.memory_file = content.get("memory_file", self.conversation.replace(".json", ".pickle"))
+
+    def add_message(self, message=None, role=None, content=None):
+        if message is not None:
+            self.messages.append(message)
+        elif role is not None and content is not None:
+            self.messages.append({"role": role, "content": content})
+        else:
+            raise ValueError("Either provide a message dictionary or both role and content")
+        self.save_conversation()
+
+    def save_conversation(self):
+        with open(self.messages_file, 'w') as outfile:
+            json.dump({
+                "summary": self.summary,
+                "first_summary": self.first_summary,
+                "messages": self.messages,
+                "system_message": self.system_message,
+                "messages_since_summary": self.messages_since_summary,
+            }, outfile, indent=4)
+
+
+
+class Summarizer:
+    def __init__(
+            self, model, summary_tokens, summarize_every, summary_similarity_threshold,
+            conversation,
+            summary_prompt = None
+        ):
+        self.model = model
+        if summary_prompt is None:
+            self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance. The summary must be less than 200 words."""
+        self.conversation = conversation
+        self.summary_tokens = summary_tokens
+        self.summarize_every = summarize_every
+        self.summary_similarity_threshold = summary_similarity_threshold
+        self.summary_rejected = False
+
+    def set_conversation(self, conversation):
+        self.conversation = conversation
+
+    def summarize(self, messages):
+        messages.append({"role": "user", "content": self.summary_prompt})
+        summary = client.chat.completions.create(model=self.model, messages=messages).choices[0].message.content
+        if self.conversation.first_summary:
+            self.conversation.first_summary = False
+            return summary
+        else:
+            return self.compare_and_update_summary(self.conversation.summary["content"], summary)
+    
+    def compare_and_update_summary(self, old_summary, new_summary):
+        similarity = 1 - distance(old_summary.lower(), new_summary.lower()) / max(len(old_summary), len(new_summary))
+        if similarity >= self.summary_similarity_threshold:
+            self.summary_rejected = False
+            return new_summary
+        else:
+            self.summary_rejected = True
+            return old_summary
+
+    def check_summary(self, context):
+        self.conversation.messages_since_summary += 1
+        if (self.conversation.messages_since_summary >= self.summarize_every) or self.conversation.first_summary:
+            messages = context.in_context_messages()
+            summary = self.summarize(messages)
+            if not self.summary_rejected:
+                self.conversation.messages_since_summary = 0
+        self.conversation.summary["content"] = summary
+        self.conversation.save_conversation()
+
+
+
+class ContextWindowBuilder():
+    def __init__(self, conversation, content_tokens, memory_tokens, min_messages):
+        self.conversation = conversation
+        self.content_tokens = content_tokens
+        self.memory_tokens = memory_tokens
+        self.min_messages = min_messages
+        self.vector_memory = None
+
+    def set_conversation(self, conversation):
+        self.conversation = conversation
+        self.vector_memory = embedder.Memory(self.conversation.memory_file, self.conversation.messages)
+
+    def build_notes_message(self, messages):
+        print("building notes")
+        self.vector_memory.encode_conversation(self.conversation.messages)
+
+        if len(messages) == 0:
+            return None
+        
+        key = messages[-1]["content"]
+        result = self.vector_memory.query(key, k=20)
+        
+        notes_message = "Parts from previous conversation you remember:"
+        for page in result:
+            note = page.page_content
+            note_content = ": ".join(note.split(": ")[1:])
+            if any(note_content in m["content"] for m in messages):
+                continue
+            if note in notes_message:
+                continue
+            notes_message += f"\n\n{note}"
+            if count_tokens(notes_message) >= self.memory_tokens:
+                break
+
+        print("notes built")
+        return notes_message
+
+    def last_message_index(self, messages=None):
+        if messages is None:
+            messages = self.conversation.messages
+        index = -min([len(messages), 200])
+        while num_tokens_from_messages(messages[index:]) > self.content_tokens:
+            index=index+1
+        if index > -self.min_messages:
+            index = -self.min_messages
+        print(f"{-index} messages with {num_tokens_from_messages(messages[index:])} tokens (max {self.content_tokens})")
+        return index
+
+    def out_of_context_messages(self):
+        return list(self.conversation.messages[:self.last_message_index()])
+
+    def in_context_messages(self, messages=None):
+        """ Get the latest messages that fit in the token limit """
+        if messages is None:
+            messages = self.conversation.messages
+        index = self.last_message_index(messages)
+        short = messages[index:]
+        
+        summary = f"This is a summary you wrote for yourself: {self.conversation.summary['content']}"
+        notes = self.build_notes_message(short)
+        if notes:
+            short.insert(0, {"role": "system", "content": notes})
+        short.insert(0, {"role": "system", "content": summary})
+        short.insert(0, {"role": "system", "content": self.conversation.system_message})
+        return short
+
 
 
 class LongChat():
     def __init__(
         self,
-        conversation = "summary_chatgpt.json",
-        max_summary_length = 120,
-        model = "gpt-3.5-turbo",
-        summarize_every = 2,
+        conversation = "default.json",
+        model = "gpt-4-turbo-preview",
+        summarize_every = 5,
         summary_similarity_threshold = 0.2,
-        max_tokens = 512,
-        min_messages = 3,
+        content_tokens = 4000,
+        memory_tokens = 500,
+        summary_tokens = 300,
+        reply_tokens = 2000,
+        min_messages = 2,
         conversations_path = "conversations/"
     ):
-        self.conversations_path = conversations_path
-        self.conversation = conversation
-        self.messages = []
-        self.summary = {"role": "user", "content": "We have not started the conversation yet."}
-        self.first_summary = True
-        self.index = 0
+        self.messages_since_summary = 0
         self.summarize_every = summarize_every
-        self.summary_similarity_threshold = summary_similarity_threshold
         self.summary_rejected = False
         self.model = model
-        self.system_message = """You are a helpful assistant. You will use conversation summaries to rember the context of the conversation and to continue it naturally."""
-        self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you (gpt-3.5-turbo), and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance."""
-        self.max_summary_length = max_summary_length
-        self.max_tokens = max_tokens
-        self.min_messages = min_messages
+        self.summary_prompt = """Provide a short but complete summary of our current conversation, including topics covered, key takeaways and conclusions? This summary is for you, and does not need to be human readable. Make only small updates to the previous summary to maintain coherence and relevance. The summary must be less than 200 words."""
+        self.reply_tokens = reply_tokens
+        self.conversations_path = conversations_path
 
-        self.read_conversation(conversation)
+        self.conversation = ConversationManager(conversation, self.conversations_path)
+        self.summarizer = Summarizer(
+            model, summary_tokens, summarize_every, summary_similarity_threshold,
+            self.conversation
+        )
+        self.context = ContextWindowBuilder(self.conversation, content_tokens, memory_tokens, min_messages)
+
 
     def read_conversation(self, conversation):
-        self.conversation = conversation
-        self.messages_file = os.path.join(self.conversations_path, conversation)
-        with open(self.messages_file, 'r') as f:
-            content = json.load(f)
-        if "messages" in content.keys():
-            self.messages = content["messages"]
-        if "summary" in content.keys():
-            self.summary = content["summary"]
-            if self.summary["content"] != "We have not started the conversation yet.":
-                self.first_summary = False
+        self.conversation = ConversationManager(conversation, self.conversations_path)
+        self.summarizer.set_conversation(self.conversation)
+        self.context.set_conversation(self.conversation)
 
-        # Define initial variables
-        self.index = len(self.messages)//2
-    
-    def last_message_index(self, messages=None):
-        if messages is None:
-            messages = self.messages
-        index = -min([len(messages), 20])
-        while num_tokens_from_messages(messages[index:]) > self.max_tokens:
-            index=index+1
-        if index > -self.min_messages:
-            index = -self.min_messages
-        print(f"{-index} messages with {num_tokens_from_messages(messages[index:])} tokens")
-        return index
+    def in_context_messages(self):
+        return self.context.in_context_messages()
 
-    def old_messages(self):
-        return list(self.messages[:self.last_message_index()])
+    def out_of_context_messages(self):
+        return self.context.out_of_context_messages()
 
-    def new_messages(self, messages=None):
-        if messages is None:
-            messages = self.messages
-        index = self.last_message_index(messages)
-        short = messages[index:]
-        short.insert(0, {"role": "system", "content": f"This is a summary you wrote for yourself: {self.summary['content']}"})
-        short.insert(0, {"role": "system", "content": self.system_message})
-        return short
-    
-    def summarize_chatgpt(self, messages=None):
-        print("summarizing")
-        messages = self.new_messages(messages)
-        messages.append({"role": "user", "content": self.summary_prompt})
-        summary = openai.ChatCompletion.create(
-          model=self.model, messages=messages
-        ).choices[0].message.content
-        
-        if self.first_summary:
-            self.summary = {"role": "assistant", "content": summary}
-            self.first_summary = False
-            return
-
-        old_summary = self.summary["content"]
-        similarity = 1 - distance(old_summary.lower(), summary.lower()) / max(len(old_summary), len(summary))
-        if similarity >= self.summary_similarity_threshold:
-            self.summary = {"role": "assistant", "content": summary}
-            self.summary_rejected= False
-        else:
-            print("Divergent summary rejected", similarity)
-            print(old_summary)
-            print(summary)
-            self.summary_rejected = True
-
-
-    def summarize_api(self, messages):
-        print("summarizing")
-        messages = self.new_messages()
-        self.messages.append({"role": "user", "content": self.summary_prompt})
-        print(f"sending {len(messages)} messages with {num_tokens_from_messages(messages)} tokens")
-        result = openai.Completion.create(
-          engine="davinci",
-          prompt=(f"{self.summary_prompt}:\n{messages}\n\nSummary:"),
-          max_tokens=self.max_tokens,
-          temperature=0.5,
-          n = 1,
-          stop=None,
-          frequency_penalty=0,
-          presence_penalty=0
-        ).choices[0].text.strip()
-        self.messages.append({"role": "assistant", "content": result})
-
-    def dump_conversation(self):
-        with open(self.messages_file, 'w') as outfile:
-            json.dump({"summary": self.summary, "messages": self.messages}, outfile, indent=4)
-
-    def new_message(self, user_message):
-        print(self.index)
+    def post_user_message(self, user_message):
         if user_message != "":
-            self.messages.append({"role": "user", "content": user_message})
-        new_messages = self.new_messages()
-        print(f"sending {len(new_messages)} messages with {num_tokens_from_messages(new_messages)} tokens")
-        try: 
-            result = openai.ChatCompletion.create(
-              model=self.model, messages=new_messages
-            )
-        except Exception as e:
-            self.messages.pop()
-            raise(e)
+            self.conversation.add_message(role = "user", content = user_message)
+    
+
+    def request_ai_message(self,):
+        in_context_messages = self.in_context_messages()
+        print(f"sending {len(in_context_messages)} messages with {num_tokens_from_messages(in_context_messages)} tokens")
+
+        result = client.chat.completions.create(model=self.model, messages=in_context_messages,
+        max_tokens = self.reply_tokens)
+                
+        message = result.choices[0].message.content
+        self.conversation.add_message(role = "assistant", content = message)
         
-        self.messages.append({"role": "assistant", "content": result.choices[0].message.content})
-        
-        self.dump_conversation()
-
-        if self.summary_rejected or self.first_summary or self.index % self.summarize_every == 0 and self.index > 0:
-            try:
-                self.summarize_chatgpt()
-            except Exception as e:
-                self.messages.pop()
-                raise(e)
-
-            self.dump_conversation()
-
-        self.index += 1
+        self.summarizer.check_summary(self.context)
+        return {}
     
 

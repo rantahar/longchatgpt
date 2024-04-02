@@ -7,31 +7,34 @@
         <script src="https://code.jquery.com/jquery-3.3.1.slim.min.js" integrity="sha384-q8i/X+965DzO0rT7abK41JStQIAqVgRVzpbzo5smXKp4YfRvH+8abtTE1Pi6jizo" crossorigin="anonymous"></script>
         <script src="https://cdn.jsdelivr.net/npm/popper.js@1.14.3/dist/umd/popper.min.js" integrity="sha384-ZMP7rVo3mIykV+2+9J3UJ46jBk0WLaUAdn689aCwoqbBJiSnjAK/l8WvCWPIPm49" crossorigin="anonymous"></script>
         <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.1.3/dist/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+        <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='custom.css') }}">
     </head>
     <body>
         <div class="container">
             <div class="row">
                 <div class="col-3">
-                    <div class="nav flex-column nav-pills sticky-top" id="v-pills-tab" role="tablist" aria-orientation="vertical">
-                        {% for conversation in conversations %}
-                        {%if active_conversation_id==conversation %}
-                        <a class="nav-link active" href="?conversation_id={{ conversation }}" id="v-pills-{{ conversation }}-tab">
-                            {% else %}
-                        <a class="nav-link" href="?conversation_id={{ conversation }}" id="v-pills-{{ conversation }}-tab">
-                        {% endif %}
-                            {{ conversation }}
-                        </a>
-                        {% endfor %}
+                    <div class="sidebar d-flex flex-column" id="sidebar">
+                        <div class="nav flex-column nav-pills " id="v-pills-tab" role="tablist" aria-orientation="vertical">
+                            {% for conversation in conversations %}
+                            {%if active_conversation_id==conversation %}
+                            <a class="nav-link active" href="select_conversation?conversation_id={{ conversation }}" id="v-pills-{{ conversation }}-tab">
+                                {% else %}
+                            <a class="nav-link" href="select_conversation?conversation_id={{ conversation }}" id="v-pills-{{ conversation }}-tab">
+                            {% endif %}
+                                {{ conversation }}
+                            </a>
+                            {% endfor %}
+                        </div>
+                        <div class="mt-auto mb-2">
+                            <a class="btn btn-primary" href="#" id="edit-system-message-btn" data-toggle="modal" data-target="#edit-system-message-modal">Edit System Message</a>
+                        </div>
                     </div>
                 </div>
                 <div class="col-9">
                     {% for message in messages %}
                     
-                    {% if message.is_summary %}
+                    {% if message.role == "system" %}
                     <div class="message mb-2 text-lg card bg-primary text-white">
-                        <div class="card-header">
-                            Summary
-                        </div>
                         <div class="card-body">
                             <strong>{{ message.role }}</strong>
                             <p>{{ message.content | safe }}</p>
@@ -50,19 +53,47 @@
                         <strong>Error posting the following message: </strong>{{ error_in }}
                     </div>
                     {% endif %}
-                    <form method="post" id="message_form" action="{{ url_for('home') }}">
-                        <textarea name="new_message" class="form-control" placeholder="Type your message here" onkeydown="if(event.ctrlKey&&event.keyCode==13){event.preventDefault(); sendMessage();}"></textarea>
+                    <form method="post" id="message_form" action="{{ url_for('new_message') }}">
+                        <textarea name="new_message" id="new_message" class="form-control" rows="5" placeholder="Type your message here" onkeydown="if(event.ctrlKey&&event.keyCode==13){event.preventDefault(); sendMessage();}"></textarea>
                         <input type="hidden" name="conversation_id" value="{{ active_conversation_id }}"/>
-                        <button id="send-button" type="submit" class="btn btn-primary" onclick="sendMessage()">Send</button>
+                        <button id="send_button" type="submit" class="btn btn-primary" onclick="sendMessage()">Post</button>
+                        <button id="paste-code-button"  type="button" onclick="pasteCode()" class="btn btn-secondary">Paste Code</button>
+                    </form>
+                    <form method="post" id="request_form" action="{{ url_for('request_ai_message') }}">
+                        <button id="request_button" type="submit" class="btn btn-primary" onclick="requestMessage()">Request Reply</button>
                     </form>
                 </div>
             </div>
         </div>
-        <script>$(document).ready(function(){ $("form").submit(function(){ $("#send-button").attr("disabled", true); $("#send-button").css("opacity", "0.5"); $('#loading-spinner').show(); }); });</script>
+
+        <!-- Edit System Message Modal -->
+        <div class="modal fade" id="edit-system-message-modal" tabindex="-1" role="dialog" aria-labelledby="edit-system-message-modal-label" aria-hidden="true">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="edit-system-message-modal-label">Edit System Message</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                       </button>
+                    </div>
+                    <form id="system-message-form" action="/save_system_message" method="post">
+                        <div class="modal-body">
+                            <textarea class="form-control" id="system-message-input" name="system_message" rows="10" style="width: 100%">{{system_message}}</textarea>
+                        </div>
+                        <div class="modal-footer">
+                          <button type="submit" class="btn btn-primary">Save</button>
+                          <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <script>$(document).ready(function(){ $("form").submit(function(){ $("#request_button").attr("disabled", true); $("#request_button").css("opacity", "0.5"); $('#loading-spinner').show(); }); });</script>
         <script>
             function sendMessage() {
                 // disable send button to prevent sending same message twice             
-                var btn = document.getElementById("send-button");
+                var btn = document.getElementById("send_button");
                 if(btn.disabled) {
                     return;
                 }
@@ -73,10 +104,44 @@
                 var form = document.getElementById('message_form');
                 form.submit();
             }
+
+            function requestMessage() {
+                // disable send button to prevent sending same message twice             
+                var btn = document.getElementById("request_button");
+                if(btn.disabled) {
+                    return;
+                }
+                btn.disabled = true;
+                btn.style.opacity = 0.5;
+
+                // submit the form
+                var form = document.getElementById('request_form');
+                form.submit();
+            }
         
             window.onload = function() {
                 window.scrollTo(0, document.body.scrollHeight);
             }
+
+            function pasteCode() {
+              navigator.clipboard.readText()
+                .then(function(code) {
+                  var formattedCode = "```\n" + code + "\n```";
+                  document.getElementById("new_message").value += formattedCode;
+                })
+                .catch(function(error) {
+                  console.error('Failed to read clipboard contents: ', error);
+                });
+            }
+        </script>
+        <script>
+            $(document).ready(function() {
+                $("#edit-system-message").click(function(e) {
+                    e.preventDefault();
+                    // Open the popup or modal dialog to edit the system message
+                    // Add your code to open the popup/modal here
+                });
+            });
         </script>
     </body>
 </html>

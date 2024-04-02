@@ -1,0 +1,4 @@
+conversations/*.json
+memory/*.pickle
+api_key
+*.pyc
