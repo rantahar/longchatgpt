@@ -6,6 +6,7 @@ import functions
 from Levenshtein import distance
 import traceback
 import embedder
+import copy
 
 
 with open('api_key', 'r') as file1:
@@ -220,13 +221,27 @@ class LongChat():
     
 
     def request_ai_message(self,):
-        in_context_messages = self.in_context_messages()
+        in_context_messages = copy.deepcopy(self.in_context_messages())
         print(f"sending {len(in_context_messages)} messages with {num_tokens_from_messages(in_context_messages)} tokens")
+
+        in_context_messages[-1]["content"] += """
+
+Reply in the following format:
+Scratchpad:
+These are your internal thoughts and are not displayed to the user. Use this section to plan your reply and structure your thoughts.
+
+Actual Reply:
+This section should contain the actual reply to the user. This is what the user will see.
+"""
 
         result = client.chat.completions.create(model=self.model, messages=in_context_messages,
         max_tokens = self.reply_tokens)
         
         message = result.choices[0].message.content
+        parts = message.split("Actual Reply:")
+        print(parts[0])
+        message = parts[-1].strip().lstrip("*").strip().lstrip("#").strip()
+
         self.conversation.add_message(role = "assistant", content = message)
         
         self.summarizer.check_summary(self.context)
