@@ -100,7 +100,7 @@ class Summarizer:
             summary = self.summarize(messages)
             if not self.summary_rejected:
                 self.conversation.messages_since_summary = 0
-        self.conversation.summary["content"] = summary
+            self.conversation.summary["content"] = summary
         self.conversation.save_conversation()
 
 
@@ -225,7 +225,7 @@ class LongChat():
 
         result = client.chat.completions.create(model=self.model, messages=in_context_messages,
         max_tokens = self.reply_tokens)
-                
+        
         message = result.choices[0].message.content
         self.conversation.add_message(role = "assistant", content = message)
         
