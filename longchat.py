@@ -1,5 +1,6 @@
 import json
 from openai import OpenAI
+from anthropic import Anthropic
 from tokens import num_tokens_from_messages, count_tokens
 import os
 import functions
@@ -9,8 +10,122 @@ import embedder
 import copy
 
 
-with open('api_key', 'r') as file1:
-    client = OpenAI(api_key=file1.readlines()[0].strip())
+client = "anthropic"
+
+    
+class AnthropicClient():
+    def __init__(
+            self,
+            api_key_file = "anthropic_key",
+            #model = "claude-3-opus-20240229"
+            model = "claude-3-sonnet-20240229",
+            summarization_model="claude-3-haiku-20240307",
+            input_tokens = 10000,
+            output_tokens = 2000,
+        ):
+        with open(api_key_file, 'r') as file1:
+            api_key = file1.readlines()[0].strip()
+
+        self.model = model
+        self.summarization_model = summarization_model
+        self.api_key = api_key
+        self.client = Anthropic(api_key=api_key)
+
+        self.content_tokens = int(0.8*input_tokens)
+        self.memory_tokens =  int(0.1*input_tokens)
+        self.summary_tokens = int(0.05*input_tokens)
+        self.reply_tokens =  output_tokens
+
+    def coalesce_messages(self, messages):
+        """ Anthropic does not like multiple messages from the same agent in a row. This function coalesces them. """
+        coalesced_messages = []
+        for message in messages:
+            if len(coalesced_messages) == 0:
+                coalesced_messages.append(message)
+            elif coalesced_messages[-1]["role"] == message["role"]:
+                coalesced_messages[-1]["content"] += "\n\n" + message["content"]
+            else:
+                coalesced_messages.append(message)
+        return coalesced_messages
+    
+    def summarize_conversation(self, messages, max_tokens=None):
+        if max_tokens is None:
+            max_tokens = self.summary_tokens
+        conversation_text = "\n\n".join([f"{m['role'].upper()}: {m['content']}" for m in messages])
+        prompt = f"Summarize the key points and main ideas from the following conversation snippet in a concise bullet point format:\n\n{conversation_text}"
+
+        result = self.client.messages.create(
+            model=self.summarization_model,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}]
+        )
+        return result.content[0].text
+
+    def request_message(self, messages, max_tokens=None):
+        if max_tokens is None:
+            max_tokens = self.reply_tokens
+        non_system_messages = [m for m in messages if m["role"] != "system"]
+        system_message = "\n\n".join([m["content"] for m in messages if m["role"] == "system"])
+        non_system_messages = self.coalesce_messages(non_system_messages)
+        result = self.client.messages.create(
+            model=self.model,
+            max_tokens=max_tokens,
+            system=system_message,
+            messages=non_system_messages
+        )
+        return result.content[0].text
+
+
+class OpenAIClient():
+    def __init__(
+            self,
+            api_key_file = "openai_key",
+            model = "gpt-4o",
+            summarization_model="gpt-3.5-turbo-0125",
+            input_tokens = 5000,
+            output_tokens = 2000,
+        ):
+        with open(api_key_file, 'r') as file1:
+            api_key = file1.readlines()[0].strip()
+        
+        self.model = model
+        self.summarization_model = summarization_model
+        self.api_key = api_key
+        
+        self.content_tokens = int(0.8*input_tokens)
+        self.memory_tokens =  int(0.1*input_tokens)
+        self.summary_tokens = int(0.05*input_tokens)
+        self.reply_tokens =  output_tokens
+
+        self.client = OpenAI(api_key=api_key)
+
+    def summarize_conversation(self, messages, max_tokens=None):
+        if max_tokens is None:
+            max_tokens = self.summary_tokens
+        conversation_text = "\n\n".join([f"{m['role'].upper()}: {m['content']}" for m in messages])
+        prompt = f"Summarize the key points and main ideas from the following conversation snippet in a concise bullet point format:\n\n{conversation_text}"
+        result = self.client.completions.create(
+            model=self.summarization_model,
+            max_tokens=max_tokens,
+            prompt=prompt
+        )
+        return result.completion.text
+
+    def request_message(self, messages, max_tokens=None):
+        if max_tokens is None:
+            max_tokens = self.reply_tokens
+        return self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            max_tokens=max_tokens
+        ).choices[0].message.content
+
+
+if client == "openai":
+    client = OpenAIClient("openai_key")
+elif client == "anthropic":
+    client = AnthropicClient("anthropic_key")
+
 
 
 class ConversationManager:
@@ -38,12 +153,12 @@ class ConversationManager:
         self.memory_file = content.get("memory_file", self.conversation.replace(".json", ".pickle"))
 
     def add_message(self, message=None, role=None, content=None):
-        if message is not None:
-            self.messages.append(message)
-        elif role is not None and content is not None:
-            self.messages.append({"role": role, "content": content})
-        else:
-            raise ValueError("Either provide a message dictionary or both role and content")
+        if message is None:
+            if role is not None and content is not None:
+                message = {"role": role, "content": content}
+            else:
+                raise ValueError("Either provide a message dictionary or both role and content")
+        self.messages.append({"role": role, "content": content})
         self.save_conversation()
 
     def save_conversation(self):
@@ -78,7 +193,7 @@ class Summarizer:
 
     def summarize(self, messages):
         messages.append({"role": "user", "content": self.summary_prompt})
-        summary = client.chat.completions.create(model=self.model, messages=messages).choices[0].message.content
+        summary = client.request_message(messages=messages)
         if self.conversation.first_summary:
             self.conversation.first_summary = False
             return summary
@@ -116,23 +231,41 @@ class ContextWindowBuilder():
 
     def set_conversation(self, conversation):
         self.conversation = conversation
-        self.vector_memory = embedder.Memory(self.conversation.memory_file, self.conversation.messages)
+        self.vector_memory = embedder.Memory(self.conversation.memory_file)
+        if not self.vector_memory.memory_exists():
+            print("no memory")
+            self.memorize_messages(self.conversation.messages)
+
+    def memorize_message(self, message):
+        summary_points = client.summarize_conversation([message])
+        summary_points = [s for s in summary_points.split("\n") if s.startswith("- ")]
+        for s in summary_points:
+            print(s)
+            self.vector_memory.encode_text(s)
+
+    def memorize_messages(self, conversation):
+        print("memorize_messages")
+        for message in conversation:
+            self.memorize_message(message)
 
     def build_notes_message(self, messages):
         print("building notes")
-        self.vector_memory.encode_conversation(self.conversation.messages)
+        if not self.vector_memory.memory_exists():
+            print("no memory")
+            self.memorize_messages()
 
         if len(messages) == 0:
             return None
         
         key = messages[-1]["content"]
         result = self.vector_memory.query(key, k=20)
+        print(result)
         
         notes_message = "Parts from previous conversation you remember:"
         for page in result:
             note = page.page_content
-            note_content = ": ".join(note.split(": ")[1:])
-            if any(note_content in m["content"] for m in messages):
+            print(note)
+            if any(note in m["content"] for m in messages):
                 continue
             if note in notes_message:
                 continue
@@ -178,10 +311,10 @@ class LongChat():
     def __init__(
         self,
         conversation = "default.json",
-        model = "gpt-4-turbo-preview",
+        model = "gpt-4o",
         summarize_every = 5,
         summary_similarity_threshold = 0.2,
-        content_tokens = 4000,
+        content_tokens = client.content_tokens,
         memory_tokens = 500,
         summary_tokens = 300,
         reply_tokens = 2000,
@@ -218,6 +351,7 @@ class LongChat():
     def post_user_message(self, user_message):
         if user_message != "":
             self.conversation.add_message(role = "user", content = user_message)
+            self.context.memorize_message({"role": "user", "content": user_message})
     
 
     def request_ai_message(self,):
@@ -234,15 +368,15 @@ Actual Reply:
 This section should contain the actual reply to the user. This is what the user will see.
 """
 
-        result = client.chat.completions.create(model=self.model, messages=in_context_messages,
+        message = client.request_message(messages=in_context_messages,
         max_tokens = self.reply_tokens)
         
-        message = result.choices[0].message.content
         parts = message.split("Actual Reply:")
         print(parts[0])
         message = parts[-1].strip().lstrip("*").strip().lstrip("#").strip()
 
         self.conversation.add_message(role = "assistant", content = message)
+        self.context.memorize_message({"role": "assistant", "content": message})
         
         self.summarizer.check_summary(self.context)
         return {}

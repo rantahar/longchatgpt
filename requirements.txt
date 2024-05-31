@@ -10,3 +10,4 @@ tqdm
 langchain
 langchain-community
 faiss-cpu
+anthropic

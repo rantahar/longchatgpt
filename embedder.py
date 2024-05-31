@@ -8,11 +8,9 @@ from tokens import count_tokens
 class Memory():
     def __init__(
         self,
-        memory_file,
-        messages
+        memory_file
     ):
         self.memory_file = "memory/" + memory_file
-        self.encode_conversation(messages)
     
         
     def split_text(self, text, max_split_len = 100, separator="\n"):
@@ -71,40 +69,56 @@ class Memory():
         except:
             self.encode_conversation(messages)
 
-
-    def encode_conversation(self, messages):
+    def memory_exists(self):
         try:
             with open(self.memory_file, "rb") as file:
                 db = pickle.load(file)
+            return True
+        except Exception as e:
+            print(e)
+            return False
+
+    def encode_conversation(self, messages):
+        if messages:
+            texts = ["system: "]
+            for message in messages:
+                splits = self.split_message(message)
+                texts += [f"{message['role']}: {s}" for s in splits]
+            hf = HuggingFaceEmbeddings()
+            db = FAISS.from_texts(texts, hf)
+
+            with open(self.memory_file, "wb") as file:
+                pickle.dump(db, file)
+
+    def encode_texts(self, texts, source=None):
+        if source:
+            texts = [f"{source}: {t}" for t in texts if t]
+
+        try:
+            with open(self.memory_file, "rb") as file:
+                db = pickle.load(file)
+            db.add_texts(texts)
         except:
-            if messages:
-                texts = ["system: "]
-                for message in messages:
-                    splits = self.split_message(message)
-                    texts += [f"{message['role']}: {s}" for s in splits]
-                hf = HuggingFaceEmbeddings()
-                db = FAISS.from_texts(texts, hf)
+            db = FAISS.from_texts(texts, HuggingFaceEmbeddings())
 
-                with open(self.memory_file, "wb") as file:
-                    pickle.dump(db, file)
-
-    def encode_texts(self, texts, source="text"):
-        with open(self.memory_file, "rb") as file:
-            db = pickle.load(file)
-
-        texts += [f"{source}: {t}" for t in texts]
         db.add_texts(texts)
 
         with open(self.memory_file, "wb") as file:
             pickle.dump(db, file)
 
-    def encode_text(self, text, source="text"):
-        with open(self.memory_file, "rb") as file:
-            db = pickle.load(file)
+    def encode_text(self, text, source=None):
+        if len(text) == 0:
+            return
+        texts = self.split_text(text)
+        if source:
+            texts =  [f"{source}: {s}" for s in texts if s]
 
-        splits = self.split_text(text)
-        texts =  [f"{source}: {s}" for s in splits]
-        db.add_texts(texts)
+        try:
+            with open(self.memory_file, "rb") as file:
+                db = pickle.load(file)
+            db.add_texts(texts)
+        except:
+            db = FAISS.from_texts(texts, HuggingFaceEmbeddings())
 
         with open(self.memory_file, "wb") as file:
             pickle.dump(db, file)
