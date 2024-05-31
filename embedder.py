@@ -101,15 +101,13 @@ class Memory():
         except:
             db = FAISS.from_texts(texts, HuggingFaceEmbeddings())
 
-        db.add_texts(texts)
-
         with open(self.memory_file, "wb") as file:
             pickle.dump(db, file)
 
     def encode_text(self, text, source=None):
         if len(text) == 0:
             return
-        texts = self.split_text(text)
+        texts = self.split_text(text, separator="\n")
         if source:
             texts =  [f"{source}: {s}" for s in texts if s]
 

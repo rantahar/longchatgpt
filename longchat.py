@@ -52,7 +52,7 @@ class AnthropicClient():
         if max_tokens is None:
             max_tokens = self.summary_tokens
         conversation_text = "\n\n".join([f"{m['role'].upper()}: {m['content']}" for m in messages])
-        prompt = f"Summarize the key points and main ideas from the following conversation snippet in a concise bullet point format:\n\n{conversation_text}"
+        prompt = f"Summarize the key points and main ideas from the following conversation snippet in a concise bullet point format. Each bullet point must contain a single line.\n\n{conversation_text}"
 
         result = self.client.messages.create(
             model=self.summarization_model,
@@ -103,7 +103,7 @@ class OpenAIClient():
         if max_tokens is None:
             max_tokens = self.summary_tokens
         conversation_text = "\n\n".join([f"{m['role'].upper()}: {m['content']}" for m in messages])
-        prompt = f"Summarize the key points and main ideas from the following conversation snippet in a concise bullet point format:\n\n{conversation_text}"
+        prompt = f"Summarize the key points and main ideas from the following conversation snippet in a concise bullet point format. Each bullet point must contain a single line.\n\n{conversation_text}"
         result = self.client.completions.create(
             model=self.summarization_model,
             max_tokens=max_tokens,
@@ -234,25 +234,37 @@ class ContextWindowBuilder():
         self.vector_memory = embedder.Memory(self.conversation.memory_file)
         if not self.vector_memory.memory_exists():
             print("no memory")
-            self.memorize_messages(self.conversation.messages)
+            self.memorize_conversation(self.conversation.messages)
 
     def memorize_message(self, message):
         summary_points = client.summarize_conversation([message])
         summary_points = [s for s in summary_points.split("\n") if s.startswith("- ")]
-        for s in summary_points:
-            print(s)
-            self.vector_memory.encode_text(s)
+        summary_points = '\n'.join(summary_points)
+        print(summary_points)
+        self.vector_memory.encode_text(summary_points)
 
-    def memorize_messages(self, conversation):
-        print("memorize_messages")
+    def memorize_messages(self, messages):
+        summary_points = client.summarize_conversation(messages)
+        print(summary_points)
+        summary_points = [s for s in summary_points.split("\n") if s.startswith("- ")]
+        print(summary_points)
+        self.vector_memory.encode_texts(summary_points)
+
+    def memorize_conversation(self, conversation):
+        print("memorize_conversation")
+        chunk = []
         for message in conversation:
-            self.memorize_message(message)
+            chunk.append(message)
+            if num_tokens_from_messages(chunk) > self.content_tokens:
+                self.memorize_messages(chunk)
+                chunk = []
+        self.memorize_messages(chunk)
 
     def build_notes_message(self, messages):
         print("building notes")
         if not self.vector_memory.memory_exists():
             print("no memory")
-            self.memorize_messages()
+            self.memorize_conversation(self.conversation.messages)
 
         if len(messages) == 0:
             return None
@@ -352,6 +364,7 @@ class LongChat():
         if user_message != "":
             self.conversation.add_message(role = "user", content = user_message)
             self.context.memorize_message({"role": "user", "content": user_message})
+            self.summarizer.check_summary(self.context)
     
 
     def request_ai_message(self,):
@@ -377,7 +390,6 @@ This section should contain the actual reply to the user. This is what the user 
 
         self.conversation.add_message(role = "assistant", content = message)
         self.context.memorize_message({"role": "assistant", "content": message})
-        
         self.summarizer.check_summary(self.context)
         return {}
     
