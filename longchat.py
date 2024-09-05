@@ -1,11 +1,10 @@
 import json
 from openai import OpenAI
+import anthropic
 from anthropic import Anthropic
 from tokens import num_tokens_from_messages, count_tokens
 import os
-import functions
 from Levenshtein import distance
-import traceback
 import embedder
 import copy
 
@@ -18,7 +17,7 @@ class AnthropicClient():
             self,
             api_key_file = "anthropic_key",
             #model = "claude-3-opus-20240229"
-            model = "claude-3-sonnet-20240229",
+            model = "claude-3-5-sonnet-20240620",
             summarization_model="claude-3-haiku-20240307",
             input_tokens = 10000,
             output_tokens = 2000,
@@ -64,15 +63,26 @@ class AnthropicClient():
     def request_message(self, messages, max_tokens=None):
         if max_tokens is None:
             max_tokens = self.reply_tokens
+        system_messages = [m for m in messages if m["role"] == "system"]
         non_system_messages = [m for m in messages if m["role"] != "system"]
-        system_message = "\n\n".join([m["content"] for m in messages if m["role"] == "system"])
+        system_message = system_messages[0]["content"]
+        
+        relabeled_system_messages = [
+            {"role": "user", "content": m["content"]} for m in system_messages[1:]
+        ]
+        non_system_messages = relabeled_system_messages + non_system_messages
         non_system_messages = self.coalesce_messages(non_system_messages)
-        result = self.client.messages.create(
-            model=self.model,
-            max_tokens=max_tokens,
-            system=system_message,
-            messages=non_system_messages
-        )
+        
+        try:
+            result = self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                system=system_message,
+                messages=non_system_messages
+            )
+        except anthropic.InternalServerError as e:
+            print(e)
+            print("Server error, retrying")
         return result.content[0].text
 
 
@@ -192,6 +202,7 @@ class Summarizer:
         self.conversation = conversation
 
     def summarize(self, messages):
+        messages = copy.deepcopy(messages)
         messages.append({"role": "user", "content": self.summary_prompt})
         summary = client.request_message(messages=messages)
         if self.conversation.first_summary:
@@ -258,7 +269,8 @@ class ContextWindowBuilder():
             if num_tokens_from_messages(chunk) > self.content_tokens:
                 self.memorize_messages(chunk)
                 chunk = []
-        self.memorize_messages(chunk)
+        if len(chunk) > 0:
+            self.memorize_messages(chunk)
 
     def build_notes_message(self, messages):
         print("building notes")
