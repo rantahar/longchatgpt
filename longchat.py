@@ -1,3 +1,4 @@
+import time
 import json
 from openai import OpenAI
 import anthropic
@@ -7,7 +8,6 @@ import os
 from Levenshtein import distance
 import embedder
 import copy
-
 
 client = "anthropic"
 
@@ -21,6 +21,7 @@ class AnthropicClient():
             summarization_model="claude-3-haiku-20240307",
             input_tokens = 10000,
             output_tokens = 2000,
+            enable_caching = True,
         ):
         with open(api_key_file, 'r') as file1:
             api_key = file1.readlines()[0].strip()
@@ -35,14 +36,27 @@ class AnthropicClient():
         self.summary_tokens = int(0.05*input_tokens)
         self.reply_tokens =  output_tokens
 
+        self.cache_breakpoints = None
+
     def coalesce_messages(self, messages):
-        """ Anthropic does not like multiple messages from the same agent in a row. This function coalesces them. """
+        """ When multiple messages are from the same user, content should be a list of content dicts.
+        These are like {"type": "text", "text": "actual text", "cache_control": {"type": "ephemeral"}}.
+        The "cache_control" key is optional and only used when the message is actually cached.
+        """
         coalesced_messages = []
         for message in messages:
             if len(coalesced_messages) == 0:
                 coalesced_messages.append(message)
             elif coalesced_messages[-1]["role"] == message["role"]:
-                coalesced_messages[-1]["content"] += "\n\n" + message["content"]
+                if type(coalesced_messages[-1]["content"]) == list:
+                    coalesced_messages[-1]["content"].append(
+                        {"type": "text", "text": message["content"]}
+                    )
+                else:
+                    coalesced_messages[-1]["content"] = [
+                        {"type": "text", "text": coalesced_messages[-1]["content"]},
+                        {"type": "text", "text": message["content"]}
+                    ]
             else:
                 coalesced_messages.append(message)
         return coalesced_messages
@@ -53,12 +67,43 @@ class AnthropicClient():
         conversation_text = "\n\n".join([f"{m['role'].upper()}: {m['content']}" for m in messages])
         prompt = f"Summarize the key points and main ideas from the following conversation snippet in a concise bullet point format. Each bullet point must contain a single line.\n\n{conversation_text}"
 
-        result = self.client.messages.create(
-            model=self.summarization_model,
-            max_tokens=max_tokens,
-            messages=[{"role": "user", "content": prompt}]
-        )
+        while True:
+            try:
+                result = self.client.messages.create(
+                    model=self.summarization_model,
+                    max_tokens=max_tokens,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                break
+            except anthropic.InternalServerError as e:
+                print(e)
+                print("Server error, retrying")
+                time.sleep(0.1)
         return result.content[0].text
+    
+    def set_cache_points(self, messages):
+        """ Add a breakpoints for caching.
+        
+        We can add up to 4 breakpoints. If a breakpoint moves, everything before it is cached again.
+        The first breakpoint should go to the start of this conversation. After that we need to be
+        smart about it.
+        """
+        if self.cache_breakpoints is None:
+            self.cache_breakpoints = [len(messages) - 3]
+
+        for breakpoint in self.cache_breakpoints:
+            print(f"Adding cache point at {breakpoint}")
+            if isinstance(messages[breakpoint]["content"], list):
+                messages[breakpoint]["content"][-1]["cache_control"] = {"type": "ephemeral"}
+            else:
+                messages[breakpoint]["content"] = [{
+                        "type": "text",
+                        "text": messages[breakpoint]["content"],
+                        "cache_control": {"type": "ephemeral"}
+                    }]
+        
+        return messages
+
 
     def request_message(self, messages, max_tokens=None):
         if max_tokens is None:
@@ -72,13 +117,19 @@ class AnthropicClient():
         ]
         non_system_messages = relabeled_system_messages + non_system_messages
         non_system_messages = self.coalesce_messages(non_system_messages)
+        non_system_messages = self.set_cache_points(non_system_messages)
         
         try:
-            result = self.client.messages.create(
+            result = self.client.beta.prompt_caching.messages.create(
                 model=self.model,
                 max_tokens=max_tokens,
-                system=system_message,
-                messages=non_system_messages
+                extra_headers={
+                  "anthropic-beta": "prompt-caching-2024-07-31"
+                },
+                system=[
+                    {"type": "text", "text": system_message},
+                ],
+                messages=non_system_messages,
             )
         except anthropic.InternalServerError as e:
             print(e)
@@ -283,12 +334,10 @@ class ContextWindowBuilder():
         
         key = messages[-1]["content"]
         result = self.vector_memory.query(key, k=20)
-        print(result)
         
         notes_message = "Parts from previous conversation you remember:"
         for page in result:
             note = page.page_content
-            print(note)
             if any(note in m["content"] for m in messages):
                 continue
             if note in notes_message:
@@ -366,18 +415,21 @@ class LongChat():
         self.summarizer.set_conversation(self.conversation)
         self.context.set_conversation(self.conversation)
 
+
     def in_context_messages(self):
         return self.context.in_context_messages()
 
+
     def out_of_context_messages(self):
         return self.context.out_of_context_messages()
+
 
     def post_user_message(self, user_message):
         if user_message != "":
             self.conversation.add_message(role = "user", content = user_message)
             self.context.memorize_message({"role": "user", "content": user_message})
             self.summarizer.check_summary(self.context)
-    
+
 
     def request_ai_message(self,):
         in_context_messages = copy.deepcopy(self.in_context_messages())

@@ -76,7 +76,6 @@ def load_config():
         }
     chatbot.read_conversation(config["conversation"])
 
-
 def get_display_messages():
     in_context_messages = chatbot.in_context_messages()
     print(f"displaying {len(in_context_messages)} new messages")

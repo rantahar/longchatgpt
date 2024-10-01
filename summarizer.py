@@ -4,7 +4,9 @@ from longchat import AnthropicClient
 
 client = AnthropicClient("anthropic_key")
 
-chunk_size = 3000
+# Claude can handle 200 000 tokens, which is about 100 000 words. In practice, it's better
+# to keep the window slightly smaller.
+chunk_size = 5000
 
 
 def combine_chunks(chunks):
@@ -66,16 +68,16 @@ def running_summary(filename, reverse, request_text):
 @click.command()
 @click.option("--filename")
 @click.option("--reverse", is_flag=True)
-@click.option("--request_text", default="Please summarize the following text.")
-def summarize(filename, reverse, request_text):
+@click.option("--initial_request", default="Please summarize the following text.")
+@click.option("--combination_request", default="Please combine the following summaries into a single summary.")
+def summarize(filename, reverse, initial_request, combination_request):
     """ Hierarchical summary. Each chunk is summarized separately. Summaries are then concatenated and summarized. Logarithmic time, does not emphasize newer content."""
     with open(filename, "r") as f:
         text = f.read()
     
     # Start with each query with a simple system message, then a request message from the user
     system_message = {"role": "system", "content": "You are a helpful AI assistant. You help users by summarizing texts and providing insights about them."}
-    request_text = f"\n\n{request_text}\n\n"
-    summary = "(No summary yet, first paragraph)"
+    request_text = f"{initial_request}\n\n"
 
     # First split the text into paragraphs. Then compine into up to 3000 word chunks.
     sections = split_by(text, reverse=reverse)
@@ -87,7 +89,7 @@ def summarize(filename, reverse, request_text):
         
             messages = [
                 system_message,
-                {"role": "user", "content": summary + request_text + sections[i]}
+                {"role": "user", "content":  request_text + sections[i]}
             ]
 
             # Get the response from the AI
@@ -97,15 +99,17 @@ def summarize(filename, reverse, request_text):
         summaries = combine_chunks(summaries)
         print(f"Summarized {len(sections)} sections into {len(summaries)} sections")
 
+        request_text = f"{combination_request}\n\n"
         sections = summaries
     
     # Finally summarize the single concatenated section
     messages = [
         system_message,
-        {"role": "user", "content": summary + request_text + sections[0]}
+        {"role": "user", "content": request_text + sections[0]}
     ]
     summary = client.request_message(messages)
 
+    print("----------------")
     print(summary)
 
 

@@ -4,7 +4,6 @@ from langchain_community.vectorstores import FAISS
 
 from tokens import count_tokens
 
-
 class Memory():
     def __init__(
         self,
@@ -12,7 +11,6 @@ class Memory():
     ):
         self.memory_file = "memory/" + memory_file
     
-        
     def split_text(self, text, max_split_len = 100, separator="\n"):
         # split the text
         splits = text.split(separator)
@@ -36,7 +34,10 @@ class Memory():
                 new_splits = self.split_text(split, separator=new_sep, max_split_len=max_split_len)
                 combined_splits += new_splits
                 continue
-            if (separator != "\n\n") and (count_tokens(current_split) + count_tokens(split) <= max_split_len):
+            combine = separator != "\n\n"
+            combine = combine and (count_tokens(current_split) + count_tokens(split) <= max_split_len)
+            combine = combine and not split.strip().startswith("-")
+            if combine:
                 if current_split:
                     current_split += separator + split
                 else:
@@ -65,7 +66,9 @@ class Memory():
                 texts += [f"{message['role']}: {s}" for s in splits]
             db.add_texts(texts)
             with open(self.memory_file, "wb") as file:
-                pickle.dump(db, file)
+                pickle.dump(self.db, file)
+            db = None
+            gc.collect()
         except:
             self.encode_conversation(messages)
 
@@ -73,9 +76,12 @@ class Memory():
         try:
             with open(self.memory_file, "rb") as file:
                 db = pickle.load(file)
+            db = None
+            gc.collect()
             return True
         except Exception as e:
             print(e)
+            gc.collect()
             return False
 
     def encode_conversation(self, messages):
@@ -89,6 +95,8 @@ class Memory():
 
             with open(self.memory_file, "wb") as file:
                 pickle.dump(db, file)
+            db = None
+            gc.collect()
 
     def encode_texts(self, texts, source=None):
         if source:
@@ -99,10 +107,14 @@ class Memory():
                 db = pickle.load(file)
             db.add_texts(texts)
         except:
+            if not texts:
+                texts = [""]
             db = FAISS.from_texts(texts, HuggingFaceEmbeddings())
 
         with open(self.memory_file, "wb") as file:
             pickle.dump(db, file)
+        db = None
+        gc.collect()
 
     def encode_text(self, text, source=None):
         if len(text) == 0:
@@ -120,6 +132,8 @@ class Memory():
 
         with open(self.memory_file, "wb") as file:
             pickle.dump(db, file)
+        db = None
+        gc.collect()
 
     def encode_text_file(self, text_file):
         with open(text_file, "r") as file:
@@ -131,7 +145,10 @@ class Memory():
         with open(self.memory_file, "rb") as file:
             db = pickle.load(file)
             
-        return db.similarity_search(key, k=k)
+        result = db.similarity_search(key, k=k)
+        db = None
+        gc.collect()
+        return result
 
 
 
